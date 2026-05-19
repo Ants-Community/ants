@@ -50,7 +50,7 @@ This is day zero. The most valuable thing right now is sharp thinking, not code.
 - **Open an issue** to debate any part of the design — the more concrete the critique, the better.
 - **Read the manifesto** and tell us where you disagree.
 - **Watch this repository** to follow as RFCs are added.
-- **Join Matrix** `#ants-community:matrix.org` for asynchronous discussion *(opening soon)*.
+- **Join Matrix** `#ants-community:matrix.org` for asynchronous discussion (`#General` room).
 
 When the specification stabilises, working repositories for the reference node, the SDKs, and the verification toolchain will be created as sibling repos under [Ants-Community](https://github.com/Ants-Community).
 
