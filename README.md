@@ -1,5 +1,5 @@
 # ANTS
-
+![ANTS](./brand/ants-lockup-h.svg)
 > An open protocol for collective intelligence.
 
 [Manifesto](./MANIFESTO.md) · [Issues](https://github.com/Ants-Community/ants/issues) · [Matrix](https://matrix.to/#/#ants-community:matrix.org) · [ants.community](https://ants.community)
