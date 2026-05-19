@@ -1,6 +1,6 @@
 # RFC-0001 — Barter
 
-**Status:** Draft · v0.1
+**Status:** Draft · v0.2
 **Topic:** The economic layer of ANTS — how peers exchange work without money.
 **Audience:** You, if you are willing to disagree in writing.
 
@@ -202,6 +202,48 @@ A few failure modes, each with the design's response.
 
 ---
 
+## The cost of a slash — S_NCS
+
+*Added in v0.2; see [CHANGELOG](./CHANGELOG.md). [RFC-0002](./RFC-0002-verification.md)'s
+deterrence threshold needs a number this RFC never gave: the value, in NCS, of the
+standing a slash destroys. It was flagged there as the weakest, endogenous input. It
+is no longer assumed — it is derived.*
+
+A slash zeroes both reputation components of the spine that
+[RFC-0003](./RFC-0003-reputation.md) and [RFC-0004](./RFC-0004-identity.md) introduce.
+The fast component (active reputation) was going to decay within minutes anyway and is
+cheap to re-earn; its contribution is negligible. The durable loss is **tenure**, and
+tenure re-accrues only under the hard per-identity rate cap κ — no amount of compute
+buys it back faster. So the destroyed value is the productive participation forgone
+while climbing back to the eligibility floor:
+
+```
+t_recover  =  TENURE_FLOOR / κ      (a lower bound — it ignores decay during
+                                      re-accrual, so the true deterrent is
+                                      stronger; the safe direction for a
+                                      security claim)
+
+S_NCS      ≈  w · TENURE_FLOOR / κ
+```
+
+where `w` is the *establishment premium* — the NCS-per-time an at-floor peer earns
+that a sub-floor one cannot. `w` is observable and must be measured on the testnet
+(like RFC-0002's effect size `e`); it is not assumed. The endogeneity is closed down
+to that one measurable.
+
+The consequence is the most unifying result in the corpus. Since `S_NCS ∝ 1/κ`,
+substituting into RFC-0002's threshold gives `T ∝ √κ`. A smaller κ therefore
+*simultaneously* strengthens Sybil resistance (RFC-0004) and lowers RFC-0002's
+viability threshold — the two hard layers do not trade against each other in κ, they
+align. **κ is the single master security knob of the architecture**, not one
+parameter among many. Its only genuine tension is the one already named: too small
+and the honest verifier set grows too slowly; too large and a patiently
+pre-positioned adversary is cheaper. This derivation improves the deterrent's
+foundation, not its coverage — a single decisive act whose one-shot payoff exceeds
+S_NCS still escapes it; that residual is unchanged.
+
+---
+
 ## What we have not figured out yet
 
 If you are about to open an issue, here are the places we would most like sharp eyes:
@@ -210,7 +252,7 @@ If you are about to open an issue, here are the places we would most like sharp 
 - **The optimistic-unchoke ratio.** 12.5% is inherited from BitTorrent. AI services have different characteristics — higher latency per service, much higher cost variance. The right number might be different.
 - **The slot count per peer.** Set at 8 in the pseudocode. Should this be a function of the peer's declared resources? A laptop and an H100 farm should probably not have the same slot count.
 - **Cross-role rate updates.** The "every quarter, re-benchmark" cadence is arbitrary. Could be monthly, could be yearly. The right answer depends on how fast the underlying hardware landscape changes, and we will not know that for at least six months of operation.
-- **Privacy of the local ledger.** Right now, each peer's view is private to it, and that's deliberate. But this means there is no way to *prove* you have been a good network citizen when joining a new peer. Is that OK? Or do we want a portable, attested credential? We lean toward "OK for v0.1, revisit in v0.3."
+- **Privacy of the local ledger** — *resolved in v0.2; see [CHANGELOG](./CHANGELOG.md).* The "private, deliberate" stance is amended, not reversed. The ledger stays private **except the single bit "established vs newcomer."** That bit is functionally required — cold start needs a newcomer to look new (the optimistic-unchoke slot), and [RFC-0004](./RFC-0004-identity.md) eligibility needs an established peer to be able to prove it — and it is *minimised, not eliminated*, by the selective-disclosure threshold proof of [RFC-0003](./RFC-0003-reputation.md): a commitment to the receipt bag plus a zero-knowledge proof that tenure ≥ floor, leaking nothing else. It is sound because reputation is asymmetric — positive evidence is holder-presented and selective disclosure can only *under*-claim; negative evidence (slashes) is not in the holder's bag, it is RFC-0003's non-suppressible global set, so faults cannot be hidden. There is no zero-leakage portable reputation: proving you have standing reveals *that* you have standing, and that bit is the design's load-bearing signal, not an unplugged leak. Full portability and full ledger-privacy are not jointly satisfiable; we choose minimised-disclosure portability because the credible-fork-threat — the architecture's fixed point — depends on it.
 
 ---
 
