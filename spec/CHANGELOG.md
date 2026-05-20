@@ -728,3 +728,159 @@ project to be a meaningful exercise rather than a cataloguing of known
 gaps.
 
 ---
+
+## RFC-0004 · v0.4 → v0.5 · 2026-05-20 · Round 1 — closures from multi-persona review
+
+Closes four BLOCK items surfaced by the external multi-persona review of
+2026-05-20 (`REVIEW-multi-persona-2026-05.md`, 7 specialist voices). All four
+are scoped to RFC-0004; this amendment is a single RFC version bump with
+substantive additions.
+
+### N1 — G-Set pruning + late-joiner protocol
+
+**Was:** the CRDT G-Set was append-only by design (security-correct,
+monotone), but unbounded growth makes the network unsustainable at scale
+(~18M proofs after 5 years at 10⁴/day; every peer retains the lot).
+
+**Now:** new §G-Set pruning sub-section under §Layer 1 specifies
+post-epoch-confirmation pruning. Once L2 epoch `E_n` is finalised AND
+`E_(n+1)` confirms it, proofs included in `E_n`'s Merkle root become
+eligible for L1 pruning. The L2 chain becomes the canonical record from
+that point; archive nodes serve on-demand retrieval of pruned proofs.
+Late-joiner protocol explicit: sync L2 (bounded), sync recent L1
+(bounded), query archive nodes for specific historical proofs as needed,
+verify against L2 Merkle root.
+
+**Why:** the one-honest-path property is preserved at the active-epoch
+level. For pruned proofs it becomes any-archive-node-honest-path —
+different in mechanism but equivalent in security guarantee, because
+proofs remain self-authenticating and the L2 Merkle root commits to
+their existence. Pruning does not weaken `VERIFY`; it moves where the
+proof lives.
+
+### N2 — Partition recovery with equivocation slashing + Σ-T fork choice
+
+**Was:** under network partition with 2/3 finality per epoch, two
+partition halves could in principle both achieve 2/3 finality on
+different blocks — the problem that has broken Solana repeatedly.
+Recovery was an undefined open question.
+
+**Now:** new §Partition recovery sub-section under §Layer 2 specifies
+three composable mechanisms:
+
+- **Equivocation slashing**: a validator signing conflicting blocks at
+  the same height is committing self-authenticating fault (the two
+  signatures are the proof). Terminal-slash applies. With K=64,
+  achieving conflicting 2/3 finality requires ≥43 equivocating
+  validators simultaneously — the deterrent is the design's primary
+  defence.
+- **Σ-T fork choice**: when two finalised chains nonetheless emerge,
+  reconciliation uses cumulative tenure (Σ T) of validators in each
+  fork. Tenure is rate-capped by κ, so Σ T is a robust proxy for
+  "which fork has the more legitimate validator set." Losing fork's
+  blocks revert; bonds/slashes/findings recorded only in the losing
+  fork are reissued through the winning fork's subsequent epochs.
+- **Social-Schelling fallback**: balanced partitions where both forks
+  have `Σ T > θ · Σ T_total` fall back to §Fork-recovery — the named
+  irreducible coordination assumption.
+
+**Why:** the "chain is witness, not judge" property holds — partition
+recovery does not require the chain to create slashes (equivocation
+proofs are self-authenticating L1 fault proofs that exist regardless
+of which fork wins). The chain's role is providing Σ T accounting and
+the canonical reconciled history. The Σ T metric uses the slow,
+hard-to-forge component of reputation, so a fork built on
+freshly-rented cloud-TEE Sybils loses to a fork built on established
+peers.
+
+### N6 — Selective disclosure of receipts (formally specified)
+
+**Was:** RFC-0004 v0.4 §Bond accounting model referenced "RFC-0003-b's
+selective-disclosure" twice. RFC-0003-b did not exist as a document; it
+was a working nickname from an earlier session that never crystallised.
+The external reviewer correctly identified this as a broken
+cross-reference.
+
+**Now:** new §Selective disclosure of receipts as a first-class section
+of RFC-0004 (where the receipt-based (A, T, κ) computation lives). It
+specifies:
+
+- The receipt-bag **Merkle tree** with `bag_root` committed on demand.
+- The selective-disclosure protocol: peer reveals minimum subset +
+  Merkle inclusion proofs; verifier verifies each receipt, the Merkle
+  proofs, and the accumulated `Σ decayed_value ≥ b`.
+- **Soundness via lower-bound property**: selective disclosure can only
+  *under*-claim — fake receipts fail verification by countersignature,
+  and partial subsets can only show less than the peer's true `A`.
+- The **positive/negative asymmetry** that makes the mechanism safe:
+  positive evidence is peer-controlled (can only under-claim); negative
+  evidence is L1 non-suppressible (faults reach verifiers independently
+  of what the peer reveals).
+- **Compact summaries** for large peers: signed time-bucket-totals,
+  audited by random selective opens; bucket granularity calibratable.
+- Explicit acknowledgement that ZK selective disclosure is future work
+  (door is open in §What we have not figured out yet).
+
+The two prior "RFC-0003-b" references are updated to point to this
+section. The status note and the new section's intro paragraph retain
+the historical reference for traceability.
+
+**Why:** N6 was a documentation bug as much as a missing mechanism.
+Fixing it in RFC-0004 (not RFC-0003) keeps the (A, T, κ) spine + bond
+accounting + selective-disclosure machinery in one place. The
+positive/negative asymmetry is the same one the trust-closed
+architecture rests on at the L1 level, applied here at the receipt
+level — a satisfying structural reuse, no new primitive.
+
+### Bond admission race condition — race-safe protocol without clock sync
+
+**Was:** v0.4 §Atomicity said "the first to acquire bond admission
+wins; the second fails" — but "first" was ambiguous without specifying
+clock synchronisation across verifiers. Naive NTP-based ordering is
+fragile to clock attacks and adds an infrastructure dependency the
+protocol otherwise does not need.
+
+**Now:** §Atomicity specifies a race-safe protocol:
+
+1. Verifier signs `bond_admission(act_id, peer, b, V_id, L1_view_hash)`
+   and gossips it to L1.
+2. Verifier waits a propagation delay `δ_admission` (default 5s for
+   time-sensitive acts; longer for slower acts).
+3. On observed conflict, **deterministic tie-break** via
+   `BLAKE3.derive_key("ants-v1-bond-tiebreak", epoch_seed ‖ act_id ‖ V_id ‖ admission_round)`
+   — smaller hash wins; loser gossips `bond_admission_null`.
+4. No conflict observed → admission final.
+
+The protocol requires only loose clock sync (within `δ_admission`); no
+NTP dependency. The L2 chain provides the `epoch_seed` that anchors the
+tie-break function, so a peer cannot precompute favourable admission
+timings to game the function.
+
+**Why:** the L2 chain already provides the strong coordination object
+verifiers need (`epoch_seed`). Using it for tie-break closes the race
+deterministically without introducing new infrastructure, and is honest
+about what loose-coupling the protocol can promise (epoch-level
+agreement, not wall-clock-level).
+
+### State after Round 1
+
+Four of the six new findings from the multi-persona review are closed.
+Two remain as **Round 2** work:
+
+- **N3** — formal model of cross-layer composition (TLA+ or ApPCS),
+  probably as RFC-0011.
+- **N4** — implementation roadmap (`IMPLEMENTATION.md` at root,
+  decomposing the all-in-one client into ~15 sub-components with
+  dependency graph and realistic 24-36 month team-of-4-6 timeline).
+- **N5** — RFC-0007 TSC mechanics to be drafted during v0.x, not
+  forthcoming after v1.0.
+
+Three EDGE-tier register corrections (open-hardware TEE timeline,
+producer royalty 50%→60-70%, CoC enforcement not BDFL-only) are
+Round 3.
+
+The reviewer's named residuals — patient state-actor, censorship at
+L2, vendor compromise, all empirical parameters pending b2 — remain
+acknowledged as irreducible or testnet-dependent.
+
+---

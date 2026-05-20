@@ -1,7 +1,7 @@
 # RFC-0004 — Reputation: Two Layers, One Architecture
 
-**Status:** Draft · v0.4
-**Topic:** A reputation system in two layers — a consensus-free CRDT of self-authenticating fault proofs for individual slashing, and a small slow Proof-of-Unique-Hardware (PoUH) chain as ordered witness for pattern-based rules. The chain confirms what has happened. It does not create what happens. v0.3 added **A-as-bond for high-stakes acts**, closing the single-decisive-act residual that v0.2 left implicit. v0.4 specifies the **bond accounting model** (how `A` is measured, frozen, decayed during the hold, composed across overlapping acts) and clarifies the **fork-recovery bond formula** to use the pre-fault agreed state explicitly, closing the v0.3 circularity.
+**Status:** Draft · v0.5
+**Topic:** A reputation system in two layers — a consensus-free CRDT of self-authenticating fault proofs for individual slashing, and a small slow Proof-of-Unique-Hardware (PoUH) chain as ordered witness for pattern-based rules. The chain confirms what has happened. It does not create what happens. v0.3 added **A-as-bond for high-stakes acts**, v0.4 specified the **bond accounting model** and the fork-recovery bond formula. v0.5 closes four BLOCK items surfaced by the multi-persona external review: **G-Set pruning** with late-joiner protocol (N1), **partition recovery** with equivocation slashing and Σ-T fork choice (N2), **selective disclosure of receipts** as a first-class mechanism (N6, fixing previously-broken "RFC-0003-b" cross-references), and a **race-safe bond admission protocol** that does not require synchronised clocks.
 **Audience:** You, if you have read enough blockchain whitepapers to be skeptical of one more — and willing to read another.
 **Depends on:** [RFC-0003](./RFC-0003-verification.md), [RFC-0005](./RFC-0005-identity.md)
 
@@ -159,6 +159,101 @@ Invalid-proof spam (W3) is bounded but not prevented. Defences:
 
 ---
 
+### G-Set pruning and late-joiner protocol
+
+*Added in v0.5 to close N1 from the multi-persona review.*
+
+The G-Set described above is **append-only**, which is correct for security
+(monotone under attack) but not sustainable indefinitely. At steady-state
+network volume — say 10⁴ fault proofs per day — five years of operation
+produces ~18M proofs every peer would otherwise retain to compute `VERIFY`
+and answer "is X slashed?" queries.
+
+The L2 chain (§Layer 2 below) gives us the tool to bound L1 storage without
+weakening the security argument. The mechanism: **L1 proofs become prunable
+after L2 epoch confirmation, with the L2 Merkle root serving as the
+canonical record from that point.**
+
+Concretely:
+
+- When the L2 committee finalises epoch summary `E_n`, it includes a Merkle
+  root over all fault proofs visible at the cutoff time (§Layer 2 already
+  specifies this).
+- After epoch `E_(n+1)` finalises — one-epoch delay for cross-checking —
+  proofs included in `E_n`'s Merkle root become **eligible for L1 pruning**.
+  Individual peers may discard them from their local CRDT view to bound
+  storage.
+- Pruning is **peer-local**: each peer decides when to prune. A peer that
+  wants to act as a long-term archive (and earn the corresponding NCS) may
+  retain everything; a resource-constrained peer (a phone, a small home
+  server) may aggressively prune.
+
+#### Late-joiner protocol
+
+A peer joining the network at time `t = 1 year` does **not** download 18M
+historical proofs. Instead:
+
+1. **Sync the L2 chain** from genesis to the current epoch. This gives the
+   peer all `EpochSummary` objects with their Merkle roots over the L1
+   proof sets active at each cutoff. This is the bounded-size record
+   (small constant per epoch).
+2. **Sync the current L1 CRDT**: only proofs from the active epoch plus
+   the previous one. Small steady-state size.
+3. **For any historical "is X slashed?" query**: look up `X` in the L2
+   chain's index of slashed identities (every epoch summary lists subjects
+   whose proofs it confirmed). Find the epoch where `X` was first slashed,
+   identify the corresponding Merkle root.
+4. **Obtain the specific proof on demand**: query the network for the
+   proof from any peer that retains it (typically archive nodes — see
+   below). Verify the proof against the Merkle root from step 3. If
+   `VERIFY(π) == valid` and the Merkle inclusion proof matches the
+   epoch's root, the slash is confirmed.
+
+A late joiner can therefore always confirm whether a peer is slashed (the
+L2 chain says so authoritatively), and can verify the underlying proof if
+any archive node still holds it. The worst case is a slash whose
+underlying proof is no longer retrievable from any peer — recoverable in
+principle (the L2 Merkle root binds the proof's identity, and any honest
+peer with the proof can re-introduce it), but in practice means the late
+joiner refuses to interact with the subject until the proof is obtained.
+This is the **safe direction of error**: a late joiner who cannot verify
+defaults to treating the subject as slashed (per the L2 chain), not as
+honest.
+
+#### Archive nodes
+
+Long-term retention of pruned proofs is an emergent optional role. Archive
+nodes voluntarily retain the full G-Set history and serve on-demand
+retrieval queries. The economic incentive: small NCS reward per served
+retrieval, paid by the requesting peer (typically a late joiner fetching a
+specific historical proof). Exact reward formula is a calibratable
+parameter (see §What we have not figured out yet).
+
+The protocol does not require any specific peer to be an archive node. At
+maturity, a handful of well-resourced peers (commercial operators,
+foundations, academic institutions) are expected to choose the role for
+reputation or institutional reasons, similar to the existence of Bitcoin
+full-history archive nodes today.
+
+If at some point in the future *no* peer retains a specific historical
+proof, that proof becomes irrecoverable. The L2 chain still attests that
+the slash happened (via the Merkle root), but the underlying evidence is
+lost. This is acceptable: the slash stands; a curious observer cannot
+audit the original evidence. The honest framing: archive-node existence
+is a feature of network health, not a security requirement.
+
+#### What this preserves
+
+The **one-honest-path property** of §The structural win is preserved at
+the active-epoch level (recent proofs propagate through L1 as before).
+For pruned proofs, the property becomes
+**any-archive-node-honest-path** — different in mechanism but equivalent
+in security guarantee, because the proofs remain self-authenticating and
+the L2 chain commits to their existence. Pruning does not weaken
+`VERIFY`; it just moves where the proof lives.
+
+---
+
 ## Layer 2 — the PoUH chain as ordered witness
 
 Layer 1 handles individual slashing. It does not handle *patterns* — rules of
@@ -275,6 +370,87 @@ Under the v0.2 two-layer architecture this softens substantially:
 The genesis trustee set (per RFC-0001 v0.2 / RFC-0007) seeds the bootstrap
 committee; its decaying authority sunsets on the same `δ` curve described in
 *Fork-recovery* below.
+
+---
+
+### Partition recovery
+
+*Added in v0.5 to close N2 from the multi-persona review.*
+
+The Layer 2 chain uses 2/3 finality per epoch. Under network partition this
+creates a real risk that two partition halves *both* achieve 2/3 finality
+on different blocks — producing two finalised chains that cannot reconcile
+by "longest chain wins" logic (the problem that has broken Solana
+repeatedly). The protocol specifies three composable mechanisms.
+
+#### Equivocation slashing
+
+A committee member that signs blocks `B_A` and `B_B` at the same height in
+two different forks is committing **attributable equivocation**. The two
+signatures are themselves the proof: anyone holding both signed messages
+computes a self-authenticating fault proof and propagates it through L1.
+
+The penalty is severe — terminal-slash per §Slash mechanics: the
+equivocating validator's identity is permanently flagged, its tenure
+zeroed, and its bond on the relevant committee role lost. With committee
+size `K = 64`, achieving 2/3 finality on two conflicting blocks requires
+**at least 43 equivocating validators simultaneously** — a coordinated
+cost that vastly exceeds the value of any plausible attack a partition
+could enable.
+
+The deterrent is the design's primary defence. Equivocation is so
+expensive that no rational validator commits it. Partitions resolved by
+*"only one side achieves 2/3 because the other side's validators refuse
+to sign conflicting blocks"* are the **expected** outcome.
+
+#### Fork choice by Σ T
+
+When two finalised chains nonetheless emerge — through coordinated malice
+or extreme partition — the protocol's fork choice rule for reconciliation
+is the **cumulative tenure** of the validators that signed each chain's
+blocks. The fork with higher `Σ T` (summed over all validators
+participating in all finalised blocks of the fork, computed against the
+pre-partition agreed state) wins.
+
+This metric is deliberately chosen: `T` is the slow, hard-to-forge
+component of reputation (rate-capped by `κ`), so `Σ T` is a robust proxy
+for "which fork has the more legitimate validator set." A fork built on
+freshly-rented cloud-TEE Sybils has low `Σ T`; a fork supported by
+established peers has high `Σ T`.
+
+The losing fork's blocks after the partition cut are **reverted** — they
+become "uncle blocks" in the reconciled history. The validators of the
+losing fork are not slashed for signing those blocks (they signed only
+one fork's blocks; no equivocation), but their work for that fork is
+discarded. Bond admissions, slashes, and pattern findings recorded only
+in the losing fork are reissued through the winning fork's subsequent
+epochs.
+
+#### Social-Schelling fallback
+
+If both forks have `Σ T > θ · Σ T_total` — the partition was
+fundamentally balanced and both sides have legitimate majority validator
+support — fork choice by `Σ T` is ambiguous and the protocol explicitly
+hands recovery to the social layer per §Fork-recovery and the
+credible-fork-threat.
+
+This is the same social-Schelling floor the architecture has at every
+layer. It is the irreducible coordination assumption. Naming it
+explicitly here means a balanced-partition recovery is not undefined
+behaviour: it is the explicit invocation of the well-specified
+fork-recovery process, with all its sub-problems and protocol
+requirements.
+
+#### What this preserves
+
+The "chain is witness, not judge" property of §Layer 2 is preserved.
+Partition recovery does not require the chain to *create* slashes — the
+equivocation proofs are self-authenticating L1 fault proofs that exist
+regardless of which fork wins. The chain's role in partition recovery is
+to provide `Σ T` accounting and the canonical history once reconciliation
+happens. The L1 layer continues to operate on both sides during the
+partition, accumulating proofs that will be reconciled when the partition
+heals.
 
 ---
 
@@ -636,9 +812,34 @@ happen. A peer participating in three Tier 3 committees simultaneously has
 three distinct bond records, each admitted at its own timestamp.
 
 If two acts arrive for the same peer simultaneously and both require bonds
-whose sum exceeds `bondable_A`, the first to acquire bond admission wins;
-the second fails. The peer must choose whether to retry the failed act
-later, after `A` has grown or another bond has released.
+whose sum exceeds `bondable_A`, the protocol uses a **race-safe admission
+protocol** (added in v0.5 to close the bond-admission race condition from
+the multi-persona review) that does **not** depend on synchronised clocks
+across verifiers:
+
+1. A verifier `V` that decides to admit a bond signs a `bond_admission`
+   object containing `(act_id, peer, b, V_id, current_L1_view_hash)` and
+   gossips it through L1.
+2. `V` then waits a **propagation delay** `δ_admission` (default 5 seconds
+   for time-sensitive acts like Tier 3 verification; longer for slower
+   acts) to observe whether any conflicting admission for `peer` was
+   propagated within that window.
+3. If a conflicting admission is observed, **deterministic tie-break**
+   resolves: the admission with the smaller
+   `BLAKE3.derive_key("ants-v1-bond-tiebreak", epoch_seed ‖ act_id ‖ V_id ‖ admission_round)`
+   wins. The losing admission is null; the losing verifier gossips a
+   `bond_admission_null` event to L1, releasing the temporary lock.
+4. If no conflict is observed after `δ_admission`, the admission is final.
+
+The tie-break function uses the current epoch's seed as input, which
+prevents a peer from precomputing favourable admission timings to game
+the function. The protocol's clock-sync requirement is **loose**:
+verifiers must agree on the current epoch and the current `epoch_seed`,
+both of which come from the L2 chain. They do **not** need to agree on
+absolute wall-clock timestamps within milliseconds.
+
+A peer whose admission loses the tie-break must choose whether to retry
+the failed act later, after `A` has grown or another bond has released.
 
 There is no "partial bond" or "borrowing against future `A`". The bond
 must exist in the peer's currently-decayed `A` at admission time.
@@ -649,9 +850,9 @@ The verifier of a high-stakes act (per the act class — RFC-0003 §Tier 3
 for triangulation committees, this RFC §Layer 2 for PoUH committees, etc.)
 is responsible for performing the bond-admission check. Specifically:
 
-1. The peer's presented receipts pass RFC-0003-b's selective-disclosure
+1. The peer's presented receipts pass §Selective disclosure of receipts'
    integrity checks (countersignatures valid, nonces fresh, timestamps
-   attributable, no double-counting).
+   attributable, no double-counting, Merkle inclusion against `bag_root`).
 2. Computing `A(peer, t)` from the receipts gives ≥ the required bond.
 3. The peer's declared `locked_bonds` set is consistent with what L1 has
    already propagated (the verifier can cross-check against the L1 CRDT
@@ -681,6 +882,99 @@ recent honest contribution, not by accumulated capital, not by hardware
 volume, not by stake. The bond mechanic is the operational expression of
 the manifesto's "the network adapts to humans, not the other way around"
 at this layer.
+
+---
+
+## Selective disclosure of receipts
+
+*Added in v0.5 to close N6 from the multi-persona review. Previous versions
+of this RFC referenced "RFC-0003-b" for this mechanism — that reference was
+a working nickname that never crystallised into a separate document. The
+mechanism lives here, where the (A, T, κ) spine and bond accounting also
+live.*
+
+A peer presenting its receipts for `A` or `T` computation — to a
+bond-admission verifier, to a verifier-eligibility check, to a fork-time
+ranking calculation — does *not* want to reveal its entire interaction
+history. The receipts collectively constitute the peer's full graph of
+who-served-whom-when, which is the "ledger is private" property
+[RFC-0001 v0.3](./RFC-0001-community-economy.md) explicitly preserves.
+
+The challenge: prove `A(peer, t) ≥ b` (or `T(peer, t) ≥ FLOOR`) by
+revealing the **minimum** receipt subset sufficient for the proof.
+
+### The mechanism
+
+A peer maintains its receipt bag as a **Merkle tree** over individual
+receipt leaves, ordered by timestamp. The root is committed on demand:
+the peer publishes
+`bag_root = BLAKE3.derive_key("ants-v1-receipt-bag-root", peer_id ‖ committed_receipts)`
+whenever it participates in a high-stakes act (RFC-0008 §4.1 reserves
+this context).
+
+To prove `A ≥ b`:
+
+1. The peer selects a subset `S` of its receipts such that
+   `Σ_{r∈S} decayed_value(r, t) ≥ b`. The selection prefers **most
+   recent first** (highest decayed value per unit of revealed
+   information), with ties broken by largest contribution value.
+2. The peer reveals `S` along with **Merkle inclusion proofs** for each
+   receipt in `S` against `bag_root`.
+3. The verifier verifies each receipt's countersignature (per the
+   normal receipt-bag integrity rules), checks Merkle inclusion against
+   `bag_root`, and recomputes `A` over `S` to confirm the bound.
+
+The verifier accepts iff every receipt in `S` is valid, every Merkle
+proof is valid, and `Σ decayed_value over S ≥ b`.
+
+### Why this is sound
+
+Receipts in `S` produce a **lower bound** on the peer's total `A`. The
+verifier sees a partial history; the peer's true `A` may be higher
+(unrevealed receipts exist). This is the safe direction of error — a
+peer that *understates* its `A` cannot exceed its true `A` through
+selective disclosure.
+
+The reverse direction is **not** a risk: a peer cannot *overstate* its
+`A` by revealing receipts, because every revealed receipt is verified by
+countersignature. Fake receipts fail verification.
+
+The **positive/negative asymmetry** that the architecture relies on at
+the L1 level applies here at the receipt level. A peer controls what
+positive evidence (receipts) it reveals, but cannot control its negative
+evidence (fault proofs in L1) — those reach the verifier independently.
+A peer with mature receipts and zero faults can prove `A ≥ b`
+selectively; a peer with faults cannot hide them by selective disclosure.
+
+### Compact summaries for large peers
+
+A peer with thousands of receipts may publish a **compact summary** to
+reduce per-bond-admission verification cost: a list of
+`(time_bucket, total_decayed_value_in_bucket)` pairs, signed by the peer
+and committed via the same Merkle root. The summary is a *hint*; the
+verifier may still require selective disclosure of individual receipts
+to confirm specific buckets at random.
+
+The summary mechanism is an optimization, not a security primitive: the
+peer can always be challenged to reveal underlying receipts for any
+audited bucket. A peer that publishes a summary containing false
+buckets and is then audited is committing equivocation against its own
+signed summary — itself an attributable fault.
+
+Bucket granularity is a calibratable parameter (see §What we have not
+figured out yet).
+
+### What this does not eliminate
+
+The full receipt bag is still derivable by any party that observes the
+peer's interactions over time. A persistent network adversary can
+correlate receipts across multiple acts (each act reveals a subset; the
+union over time approaches the full bag). Selective disclosure provides
+**privacy per act**, not **privacy over time**. The latter would
+require zero-knowledge proofs of the same statements — implementable in
+principle but at substantial cost. The protocol does not currently
+specify ZK selective disclosure; the door is left open in §What we have
+not figured out yet for future amendment.
 
 ---
 
@@ -868,12 +1162,61 @@ to bite:
   bond-admission is `O(receipts)`. Optimisation: the peer presents a
   compressed time-bucketed summary plus selective opens of the N most-
   recent receipts for verifier spot-checks. Mechanism not fully specified
-  beyond "selective disclosure per RFC-0003-b".
+  beyond "selective disclosure per §Selective disclosure of receipts"
+  (v0.5 specifies the Merkle-bag-root mechanism and the compact-summary
+  optimisation; bucket granularity calibration remains open).
 - **Bonds across forks** (v0.4 ∩ RFC-0001 v0.3 ledger portability). When a
   peer's reputation is ported across a fork (RFC-0001 v0.3's load-bearing
   portability), are locked bonds also carried? Probably yes for unresolved
   bonds, with the dispute window restarting from the fork point. Not
   explicitly specified.
+
+**v0.5 — closed by the Round 1 amendment** (cross out from this list,
+recorded here for traceability):
+
+- ~~Recovery from network partition~~ → **closed in v0.5** §Partition
+  recovery (equivocation slashing + Σ-T fork choice + social-Schelling
+  fallback for balanced cases).
+- ~~State growth / chain pruning~~ → **closed in v0.5** §G-Set pruning
+  and late-joiner protocol (post-epoch-confirmation pruning, L2 Merkle
+  roots as the canonical record, archive nodes for on-demand
+  retrieval).
+- ~~Bond admission atomicity under L1 propagation latency~~ → **closed
+  in v0.5** §Atomicity (race-safe protocol with δ_admission delay +
+  deterministic BLAKE3 tie-break; no NTP dependency).
+- ~~Receipt bag size at scale~~ → **partially closed in v0.5**
+  §Selective disclosure of receipts (Merkle-bag-root + compact-summary
+  mechanism; bucket granularity remains open).
+
+**v0.5 — new open items**:
+
+- **Archive-node NCS reward formula.** Long-term retention of pruned
+  proofs is incentivised via NCS reward per served retrieval. Exact
+  formula (per-byte? per-query? scaled by proof age?) is calibratable
+  and unmeasured.
+- **`δ_admission` calibration per act class.** Default 5 seconds for
+  time-sensitive acts (Tier 3 verification); longer for slower acts
+  (PoUH committee, fork-recovery vote). Each act class needs its own
+  empirical calibration on b2.
+- **Compact-summary bucket granularity.** Time-bucket size for the
+  receipt summary mechanism is a privacy/efficiency trade-off (smaller
+  buckets → more privacy leak per audit; larger buckets → less
+  granular `A` verification). Calibratable on testnet.
+- **ZK selective disclosure of receipts.** Future work: replace the
+  Merkle-bag-root mechanism with zero-knowledge proofs of the same
+  threshold statements, eliminating the privacy-over-time leak.
+  Implementable in principle (the statements are arithmetic on bounded
+  scalars, not LLM inference — orders of magnitude cheaper than ZKML).
+  Not specified in v0.5; the door is left open for a future amendment
+  when ZK threshold proofs are mature enough to compete with the
+  simpler selective-disclosure mechanism on cost.
+- **Censorship resistance during partition.** During a partition,
+  equivocation-resistant validators on the eventual losing fork may
+  unintentionally censor honest activity on the winning fork (they
+  cannot sign blocks they cannot see). The protocol does not currently
+  distinguish "censorship by malice" from "censorship by partition."
+  Probably treated identically — open whether that is acceptable or
+  whether partition-induced unavailability should be excused.
 
 ---
 
