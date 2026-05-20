@@ -55,6 +55,20 @@ There are no privileged contributors beyond maintainers. There is no "core team"
 
 ---
 
+## Voting weight, attested identity, and the "datacenter vs freelancer" caveat
+
+The protocol's Sybil resistance is hardware-attested: one attested CPU is one peer identity (RFC-0005, Manifesto Thesis 10). This rule applies uniformly to participation in the network *and* to governance voting (RFC-0007 elections, contributor petitions, off-cycle removal thresholds).
+
+A direct consequence, worth declaring rather than letting it remain implicit: **a university with a datacenter that runs 20 attested machines votes 20 times in elections that count by attested identity; a freelancer running one laptop votes once.** This is internally coherent with the manifesto's Sybil-resistance economics — the cost of hardware *is* the Sybil-resistance economic floor, and refusing it would mean either (a) reintroducing some off-protocol personhood verification, which violates Thesis 14, or (b) accepting a weaker Sybil bound. We chose hardware-attestation as the lesser ill, and the voting consequence travels with it.
+
+This is not a defect we will eventually patch — it is a property of the design, made explicit. Mitigations the protocol *does* provide:
+
+- **Tenure-gated influence (RFC-0004 §Tenure).** Raw identity count is not the only weight. Verifier eligibility, bond capacity, and the `Σ T_eff` fork-choice metric all use κ-rate-capped tenure, which a fresh fleet of datacenter machines cannot accumulate quickly. A long-time freelancer with one well-tenured peer carries meaningful weight against a freshly-spun-up datacenter.
+- **One-CPU-one-voice in PoUH committees.** Block production and validator-set selection (RFC-0004 §Layer 2) are by attested identity, but committee selection via VRF is uniform-random in the attested population — a datacenter's 20 machines have 20 chances of selection out of N, not a 20× weighted vote within a committee.
+- **The credible-fork-threat (the bottom of the stack).** Any decision the network produces that the broader contributor body finds illegitimate can be forked away from. The right to fork is the right to dissent, regardless of how the votes counted.
+
+The honest framing: ANTS is a network where compute resources translate into a measurable amount of voice. We minimise the proportionality below 1:1 where the architecture lets us (tenure, fork-choice saturation, the social escape hatch) but do not eliminate it.
+
 ## How decisions are made
 
 ANTS borrows its decision process from the IETF and from Linux: **rough consensus, running code, and a final tiebreaker**.

@@ -1,6 +1,6 @@
 # RFC-0002 — Semantic Cache Layer
 
-**Status:** Draft · v0.3
+**Status:** Draft · v0.4
 **Topic:** The distributed memory of the network. How peers retain, address, and reuse every honest answer the colony has ever given.
 **Audience:** You, if you are willing to disagree in writing.
 
@@ -328,6 +328,20 @@ The cache is the mechanism that resolves the structural pathology of pure barter
 - **Cache-write incentive.** When a peer performs fresh inference, they earn the immediate fee from the consumer *and* the right to royalty on all future retrievals of the cached entry. This is what makes writing to the cache rational rather than hoarding the answer.
 
 Note that in commercial economies (RFC-0006), the same mechanism operates with fiat instead of NCS, and the cache hosts may set their own retrieval prices declared via Payment Terms.
+
+### The verifiability tax and the royalty split do not compound at the producer's detriment
+
+*Added in v0.4 to address a misreading raised by the multi-persona Round 2 review (game-theory persona): "a producer dispatching a Tier 2 query pays the 2–4× verifiability tax and then yields only 35% to the cache host."*
+
+The two charges sit on different axes and act on different events; they do not stack.
+
+- **The verifiability tax** ([RFC-0009](./RFC-0009-canonical-numerics.md) §"Producer compute overhead") is paid by the producer **once**, at the moment of fresh inference, in the form of 2–4× compute on the audited path to produce `Y_canon`. It is a one-time cost for generating a cache-worthy answer. Subsequent retrievals of that answer cost nothing additional to the producer — the canonical bytes are already in the cache.
+- **The royalty split** (this §, 65/35) is paid by the **consumer**, on **every retrieval**, and split between the original producer (65%) and the serving cache host (35%). The producer's share is rent on the work already done. The host's share is fee for the lookup-and-serve work just performed. Neither party is paying the other.
+- **Tier 2/3 verification fees** ([RFC-0003](./RFC-0003-verification.md)) are paid by the **requester** to the verifier(s) in addition to the cache fee, at the requester's choice of assurance level. They do not reduce the producer's royalty or the host's serving fee.
+
+The net effect on a Tier 2 query against a cached answer: the requester pays (cache_fee) + (tier_2_verification_fee). The producer receives 65% of (cache_fee). The host receives 35% of (cache_fee). The verifier receives 100% of (tier_2_verification_fee). Nobody is paying the verifiability tax at retrieval time — the tax was paid once, by the producer, at first inference. The arithmetic is non-compounding by construction.
+
+Where Tier 2/3 economics do feel pressure is the *initial production* of canonical answers (producers face the tax-vs-not-tax choice analysed in RFC-0009), not the *steady-state retrieval* economics described in this section. RFC-0009's §"Producer compute overhead" is the right place to read the tax-side argument; this section governs only the retrieval-side flow.
 
 ---
 

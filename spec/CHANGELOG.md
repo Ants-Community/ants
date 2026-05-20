@@ -885,6 +885,184 @@ acknowledged as irreducible or testnet-dependent.
 
 ---
 
+## Round 4 EDGE — register corrections from multi-persona Round 2 review · 2026-05-20
+
+Twelve register-level corrections from the Round 2 multi-persona review.
+Recorded in one entry because each is a documentation/clarity fix, not
+an architectural change. Where a new constant or constraint follows
+from the correction, it is listed.
+
+### MANIFESTO — new Thesis 18 (We Acknowledge)
+
+**Added.** New thesis 18 under a new §"We Acknowledge" section: *"We
+depend, today, on hardware we did not build."* Names the hardware-vendor
+trust the protocol relies on for TEE attestation in 2026, commits to
+migrating to open-hardware TEE roots when production-grade (2030–2032),
+and explicitly works toward the day the thesis is obsolete. The
+manifesto previously had only positive ("We Build") and negative ("We
+Refuse") theses; this adds an honest residual ("We Acknowledge") to
+the structure.
+
+**Why:** the TEE-security persona of the Round 2 review noted that the
+corpus loads RFC-0005 with increasing responsibility while RFC-0005
+itself depends on closed-vendor TEE attestation we cannot eliminate.
+The manifesto previously did not explicitly acknowledge this — the
+acknowledgment thesis closes the rhetorical gap.
+
+### GOVERNANCE — new §"Voting weight, attested identity, and the
+'datacenter vs freelancer' caveat"
+
+**Added.** New section between §"Structure beneath the BDFL" and §"How
+decisions are made". Makes explicit the consequence of the 1-CPU-1-voice
+attestation rule: a university with 20 attested machines votes 20 times
+in elections that count by attested identity; a freelancer with one
+laptop votes once. Names the three mitigations the protocol already
+provides (tenure-gated influence, uniform VRF selection within
+committees, credible-fork-threat) without claiming to eliminate the
+proportionality.
+
+**Why:** the OSS-governance persona observed that "1 CPU = 1 voice"
+combined with hardware-attestation Sybil resistance produces a voting
+weight tied to compute resources, which is worth declaring explicitly
+rather than letting it sit as an implicit feature/bug debate.
+
+### RFC-0002 v0.3 → v0.4 — verifiability-tax / royalty separation
+
+**Was:** §"Integration with the community economy" stated the 65/35
+royalty split and the verifiability tax separately but did not address
+the misreading that they compose at the producer's detriment.
+
+**Now:** new sub-section §"The verifiability tax and the royalty split
+do not compound at the producer's detriment" specifies the three
+charges on different axes: the tax is paid once by the producer at
+fresh inference; the royalty split is paid by the consumer on every
+retrieval; Tier 2/3 verification fees are paid by the requester to
+verifiers. Net effect: nobody is paying the verifiability tax at
+retrieval time.
+
+**Why:** the game-theory persona's reading was a misreading, but a
+misreading the spec should preclude. The clarification removes the
+ambiguity.
+
+### RFC-0005 v0.1 (early, Round 4 EDGE amendments)
+
+Three Round 4 EDGE additions to RFC-0005:
+
+- **New §"The 2028–2030 vulnerability window"** under §"Sybil
+  economics". Names explicitly the period where all three long-term
+  defences (network growth, open-hardware migration, (A, T, κ)
+  amortisation) are simultaneously weak. Three operational mitigations
+  named: foundation as first responder per Manifesto Thesis 16,
+  GOVERNANCE.md sunset checkpoints attending to the window,
+  credible-fork-threat as the irreducible coordination floor.
+- **New §"Historical TEE vulnerabilities and the protocol's response
+  posture"**. Catalogues recurring TEE failure modes (Foreshadow,
+  Plundervolt, SGAxe, ÆPIC Leak, Downfall, Inception, CacheWarp,
+  Heckler, cross-VM Spectre) with a structured response posture: no
+  protocol-version bump required to absorb a new disclosure;
+  multi-vendor weighting contains the blast radius; vendor revocation
+  timing is bounded.
+- **§"Vendor compromise" extended with vendor revocation propagation
+  timing.** New constant `VENDOR_REVOCATION_PROPAGATION_BOUND`
+  (RFC-0008 §7, default 72 hours). Revocations propagated as L1 CRDT
+  objects; after 72 hours from first observation by any honest peer,
+  revoked attestations are rejected regardless of personal observation.
+
+**Why:** the TEE-security persona's three concerns (window of weakness,
+absent vulnerability catalogue, undefined revocation timing) all
+needed explicit treatment rather than implicit hope. RFC-0005 remains
+v0.1 (early) — these are register/documentation additions, not the
+substantial revisions the "early" tag anticipates.
+
+### RFC-0007 v0.1 → v0.2 — three additions
+
+- **§"Off-cycle removal" extended with size-scaled petition threshold.**
+  Replaces the static 25% rule with
+  `max(PETITION_FLOOR, min(PETITION_CEILING, ⌈0.25 · N_eligible⌉))`,
+  defaults floor=12 and ceiling=150. Three regimes (small-network
+  floor / linear / large-network ceiling) avoid both "5 friends can
+  petition" at small N and "2,500 signatures impractical" at large N.
+- **§"The chair seat" extended with the agenda-setting authority
+  acknowledgment.** Names explicitly that the transitional BDFL-as-chair
+  retains agenda-setting authority for 24 months post-v1.0, with three
+  structural bounds (chair-removal threshold, public-agenda discipline,
+  hard time limit). The BDFL does not disappear at v1.0 declaration;
+  the BDFL disappears 24 months later.
+- **New §"Catastrophic transition scenarios"** specifying continuity
+  protocols for four expected failure modes: S1 transitional chair
+  incapacitation, S2 multiple-seat vacancy, S3 contested first
+  election, S4 persistent TSC dysfunction. Each scenario has named
+  continuity mechanics that do not require ad-hoc improvisation
+  mid-crisis.
+
+**Why:** the OSS-governance persona's three concerns (petition scaling,
+BDFL chair tail, transition stress test) all needed structural rather
+than aspirational answers. The transition-stress-test section is
+particularly important because the failure scenarios are *expected*,
+not pathological, in a 7-person body with zero operational precedent.
+
+### RFC-0008 v0.4 → v0.5 — two clarifications + two new constants
+
+- **§3.3 §"Disambiguation of K"** clarifies that `K` is the
+  VRF-selected committee size (not the effectively-signing count); the
+  scheme transition (Ed25519 ≤ 16 / BLS > 16) is **epoch-atomic** —
+  every block within an epoch uses the same scheme determined by the
+  epoch's `K`; the proposer does not choose. Offline members do not
+  change `K` for the epoch; they just reduce the effectively-signing
+  count, and 2/3 finality computes against `K`.
+- **§4.3 §"Quantifying the grinding compounding bound"** quantifies the
+  worst-case attacker committee-share growth during prolonged drand
+  outage: `attacker_share(N) ≈ baseline + Δ · sqrt(N)` for `N`
+  consecutive degraded blocks, with sub-linear (sqrt) compounding.
+  Concrete table: 1h outage ~41% share, 24h outage ~71% share, 72h
+  outage ~98% share. New constant
+  `DRAND_OUTAGE_EMERGENCY_THRESHOLD` (default 6 hours) triggers an
+  emergency-response posture.
+- **§7 reference constants table** adds `VENDOR_REVOCATION_PROPAGATION_BOUND`
+  (72h, supports RFC-0005) and `DRAND_OUTAGE_EMERGENCY_THRESHOLD`
+  (6h, supports §4.3 grinding bound).
+
+**Why:** the applied-cryptography persona's two concerns (K transition
+ambiguity, drand grinding compounding bound) were specification gaps
+that needed precise fills, not approximate gestures. The K
+disambiguation reveals that what looked like ambiguity was a missing
+sentence about epoch-atomicity; the grinding bound becomes a quantified
+table with a triggered emergency threshold.
+
+### RFC-0010 v0.3 → v0.4 — unit clarification
+
+**Added.** Unit note in §Admission rules clarifying that "epoch" refers
+to `EPOCH_DURATION` (24h), not `POUH_BLOCK_TIME` (30s). The 7-epoch
+default `ROTATION_ADMISSION_WINDOW` is therefore ≈1 week wall-clock,
+not 3.5 minutes block-clock. Drand outages do not collapse this window
+since epochs continue to advance via degraded-seed fallback.
+
+**Why:** the cold-eyed software engineer persona's calculation
+("7 epochs at 30s blocks = 3.5 minutes") confused epoch with block.
+The clarification is unit-level register correction; the underlying
+mechanism is unchanged.
+
+### State after Round 4 EDGE
+
+The 12 EDGE items from the multi-persona Round 2 review are closed.
+The remaining Round 2 "ack-only / operational" items (TLA+ contributor
+identification, foundation funding, MoE/SpecDec/long-context
+canonical-recipe extensions, CBOR library audit, test vectors
+chicken-egg, etc.) are downstream of spec work — operational and
+funding decisions, not specification gaps. The corpus has now
+absorbed every reviewable concern from both review rounds.
+
+What remains, restated honestly: empirical b2 calibration of σ, e,
+T_prop, w, κ, δ_A, δ_T, T_CAP, w, T_FORK_CHOICE_CAP, R_ARCHIVE_MIN,
+EMERGENCY_REVOCATION_WINDOW, ATTESTATION_FRESHNESS_WINDOW,
+VENDOR_REVOCATION_PROPAGATION_BOUND, DRAND_OUTAGE_EMERGENCY_THRESHOLD,
+PETITION_FLOOR, PETITION_CEILING — all calibratable on testnet
+evidence — plus the irreducible residuals handed to the
+credible-fork-threat. The corpus is review-cycle-complete for what
+the corpus itself can specify.
+
+---
+
 ## Round 4 HARD — closures from multi-persona Round 2 review · 2026-05-20
 
 Five architecturally meaningful closures from the Round 2 multi-persona

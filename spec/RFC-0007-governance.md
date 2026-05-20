@@ -1,6 +1,6 @@
 # RFC-0007 — Post-v1.0 Governance: TSC Mechanics
 
-**Status:** Draft · v0.1
+**Status:** Draft · v0.2
 **Topic:** How the Technical Steering Committee that replaces the BDFL at v1.0 actually works — composition, elections, terms, decision thresholds, conflicts of interest, transition flow.
 **Audience:** You, if you might one day vote in this election or hold one of its seats.
 **Depends on:** [GOVERNANCE.md](../GOVERNANCE.md), [MANIFESTO.md](../MANIFESTO.md)
@@ -129,6 +129,40 @@ consecutively** (maximum 2 consecutive years; longer service requires a
 simple-majority votes only. The chair has **no veto** and no enhanced
 voting power on supermajority matters.
 
+**Agenda-setting authority is real authority.** *Added Round 4 EDGE
+to address the concern raised by the multi-persona Round 2 review
+(OSS-governance persona).* The chair's agenda-setting power — what
+gets discussed, in what order, with how much time — is a meaningful
+form of influence that does not appear in any vote tally. Specifying
+this honestly: during the 24-month transitional-chair period, the
+former BDFL retains agenda-setting authority over TSC deliberations.
+The BDFL therefore does not *disappear* at v1.0 declaration; the
+BDFL disappears 24 months later, when the transitional chair role
+expires. This is intentional (continuity of expertise during the
+trickiest period of the project's governance arc) and is named here
+rather than left implicit. The agenda-setting authority is bounded:
+
+- **No unilateral decisions.** Setting the agenda is not voting; the
+  TSC still decides. A chair who agenda-sets pathologically — burying
+  inconvenient items, prioritising aligned ones — is subject to the
+  same §Off-cycle removal mechanics that apply to every other TSC
+  seat. The 2/3-remaining-seats threshold for chair removal (per the
+  §Removal sub-section above) is the structural check.
+- **Public agendas.** All TSC meeting agendas are published before
+  the meeting per §TSC meeting cadence (open question). A buried item
+  remains buried in public, where contributors can call it out.
+- **Hard time limit.** 24 months is a hard cap, not renewable. After
+  the cap, the chair role rotates per the normal mechanics, and the
+  outgoing BDFL retains contributor status only.
+
+The honest framing: agenda-setting is the place where "continuity of
+the BDFL's working knowledge" most plausibly translates into
+disproportionate continuing influence, even in a fully-functioning
+TSC. The chair-removal threshold and the public-agenda discipline are
+the protocol's two structural responses; the time limit is the third.
+There is no scenario where the chair's agenda authority extends beyond
+24 months under this RFC.
+
 **Removal**: the TSC may remove the chair by 2/3 vote at any time. A
 removed chair retains their underlying seat (subsystem maintainer or
 at-large) for the rest of its term.
@@ -201,11 +235,53 @@ A TSC member who is widely considered to be acting in bad faith may be
 removed by:
 
 - 2/3 of the **remaining** TSC seats (the petitioned member recused), AND
-- A signed petition by ≥25% of contributors eligible for the relevant
-  seat class.
+- A signed petition by **at least the size-scaled threshold** of
+  contributors eligible for the relevant seat class, defined as
+  `max(PETITION_FLOOR, min(PETITION_CEILING, ⌈0.25 · N_eligible⌉))`
+  where `N_eligible` is the count of contributors eligible to vote for
+  the seat in question.
 
-This is intentionally a high bar. The intent is recovery from genuine
-abuse, not retaliation for unpopular decisions.
+#### Why size-scaled and not flat-25%
+
+*Added Round 4 EDGE to address the concern raised by the multi-persona
+Round 2 review (OSS-governance persona): the static "25% of eligible
+contributors" threshold scales badly in both directions — too easy at
+N_eligible = 50 (13 signatures suffice; a coordinated minor faction can
+mount a petition), too hard at N_eligible = 10,000 (2,500 signatures is
+impractical and effectively removes the petition path).*
+
+The scaling formula has three regimes:
+
+- **Small-network regime (`N_eligible ≤ PETITION_FLOOR / 0.25`).** The
+  floor binds; a petition requires at least `PETITION_FLOOR`
+  signatures regardless of how small the contributor body is. This
+  prevents a 4-person faction from being able to mount a credible
+  removal in a 16-person network.
+- **Linear regime (`PETITION_FLOOR / 0.25 < N_eligible <
+  PETITION_CEILING / 0.25`).** The 25%-of-eligible rule applies
+  directly. This is the regime the static rule worked correctly in.
+- **Large-network regime (`N_eligible ≥ PETITION_CEILING / 0.25`).**
+  The ceiling binds; a petition requires at most `PETITION_CEILING`
+  signatures. This makes the petition path practically reachable in a
+  10,000-peer network without making it trivial — `PETITION_CEILING`
+  is large enough that a genuine cross-cutting coalition is required.
+
+Default values (calibratable by amendment to this RFC):
+
+- **`PETITION_FLOOR = 12`** — enough signatures to be a real coalition,
+  not 4 friends.
+- **`PETITION_CEILING = 150`** — large enough to require non-trivial
+  cross-cutting agreement, small enough to be realistically reachable
+  in a mature contributor body.
+
+The thresholds may be revised once the contributor body is large
+enough to test the regime boundaries; the formula structure
+(floor / linear / ceiling) is the contribution this section makes
+and is intended to be stable across recalibrations.
+
+This is intentionally a high bar across all three regimes. The intent
+is recovery from genuine abuse, not retaliation for unpopular
+decisions.
 
 ---
 
@@ -244,6 +320,144 @@ The transition is **irreversible** by design. A future TSC may not
 re-instate a BDFL period; doing so would require amending GOVERNANCE.md,
 which requires unanimous TSC vote on a governance matter and is therefore
 extremely difficult.
+
+---
+
+## Catastrophic transition scenarios
+
+*Added Round 4 EDGE to address the strongest residual concern of the
+multi-persona Round 2 review (OSS-governance persona): "RFC-0007 is
+written as the governance document of a mature network. It lacks the
+'transition stress test' version — the failure scenarios during the
+first 24 months post-v1.0 are not pathological; they are expected in a
+system with 7 people and zero operational precedent."*
+
+The first 24 months post-v1.0 are the period of highest governance
+risk: the BDFL has stepped back from decision authority but remains
+chair (with the agenda-setting caveat above); the TSC members have no
+operational precedent for working together; the contributor body has
+not yet experienced an off-cycle election. This section specifies
+continuity protocols for the four scenarios that are not pathological
+but *expected*.
+
+### S1 — Transitional chair incapacitation or sudden death
+
+The transitional BDFL-as-chair role is filled by one person for 24
+months. That person is human and may become unavailable.
+
+**Continuity protocol:**
+
+1. The TSC convenes within 7 days of the chair's incapacitation
+   (formal medical determination, or 14 days of complete unavailability
+   with no contact, whichever comes first). The longest-tenured
+   subsystem maintainer presides over the convening meeting.
+2. The TSC elects an **interim chair** from among its remaining 6
+   members by simple majority. The interim chair serves for the
+   remainder of the original 24-month transitional period — *not* the
+   full 1-year non-transitional chair term.
+3. The interim chair has the full chair powers (agenda-setting,
+   simple-majority tiebreak), including the §Agenda-setting authority
+   acknowledgment above, but is not granted the BDFL's pre-v1.0 special
+   authorities (which have already expired at v1.0 declaration per
+   §Transition flow step 5).
+4. At the 24-month mark, the normal §The chair seat election applies:
+   a fresh 1-year chair is elected.
+
+The protocol does *not* attempt to "preserve" the original BDFL's
+agenda authority across an interim chair. Continuity of governance,
+not continuity of the chair, is the value being preserved.
+
+### S2 — Multiple seats vacant simultaneously
+
+Two or more seats becoming vacant at the same time (resignation,
+incapacitation, removal) creates a quorum risk: routine and canonical
+decisions require 5 of 7, so two empty seats leaves no margin.
+
+**Continuity protocol:**
+
+1. **Quorum holds at 5 of remaining seats** during the off-cycle
+   election window. A 5-seat TSC operating with 2 vacancies functions
+   normally for routine and canonical-artefact decisions until the
+   vacancies are filled.
+2. **Governance decisions are suspended.** Per §Decision-making
+   thresholds, governance decisions require all 7 seats. A TSC with
+   fewer than 7 seats may not pass governance amendments until the
+   vacancies are filled. This is intentional — major structural
+   decisions should not be made while the body itself is incomplete.
+3. **Off-cycle elections are expedited.** Per §Quorum, the chair
+   triggers off-cycle elections within 30 days. When 2+ seats vacate
+   simultaneously, the elections proceed in **parallel** (not
+   sequentially), with 7-day nomination + 7-day vote windows for each
+   vacant seat.
+4. **If 3+ seats are vacant simultaneously**, the situation is
+   classified **emergency**: the chair convenes the remaining seats
+   plus the most recently outgoing seat-holders (in advisory, non-voting
+   capacity) within 72 hours. If the chair is among the vacant seats,
+   the longest-tenured remaining maintainer convenes. Off-cycle
+   elections begin immediately.
+
+### S3 — Contested first election
+
+The first post-v1.0 election runs on an electorate with no precedent.
+A contested result — close vote, allegations of vote manipulation,
+candidate withdrawal mid-vote — has no precedent to fall back on.
+
+**Continuity protocol:**
+
+1. **The outgoing BDFL adjudicates contested election results during
+   the transitional period.** This is an additional authority granted
+   to the transitional-chair role specifically to handle this scenario;
+   it expires at the end of the 24-month transitional period along with
+   the rest of the transitional-chair authority.
+2. **The adjudication is constrained.** The BDFL may (a) declare a
+   result final, (b) order a re-vote with adjusted procedures
+   (extended period, observer presence, third-party verification of
+   signed votes against attested identities), or (c) declare the seat
+   vacant and trigger an off-cycle election under §S2 mechanics. The
+   BDFL may not declare a specific candidate winner against a
+   plurality of the recorded vote.
+3. **The adjudication is appealable.** A contested-election adjudication
+   may be appealed by ≥10% of the relevant electorate via signed
+   petition. The petition triggers a 2/3-of-remaining-TSC review (with
+   the BDFL-as-chair recused for the appeal). This is the only place
+   in this RFC where the chair is structurally overrideable by the
+   non-chair TSC.
+
+### S4 — TSC dysfunction (deadlock, hostile minority, factionalism)
+
+A TSC that has 4-3 splits on every canonical-artefact vote cannot
+pass any 2/3 decisions. This is not pathological dysfunction; it is a
+structurally possible state of a 7-person body with two genuinely
+incompatible visions.
+
+**Continuity protocol:**
+
+1. **No artificial tiebreak.** The protocol explicitly does not grant
+   any seat (including the chair) the authority to break a
+   canonical-artefact deadlock by enhanced voting. A 4-3 split that
+   persists across multiple meetings is a signal, not a bug.
+2. **Public deliberation.** Per §Agenda-setting authority above, all
+   meeting agendas and decisions are public. A deadlocked TSC's
+   members publicly explain their positions, contributors weigh in
+   via issue threads, and the body works through the disagreement in
+   the open.
+3. **Working group reference.** A deadlocked decision may be referred
+   to a time-bounded working group (per GOVERNANCE.md §Structure
+   beneath the BDFL) for analysis. The working group's output is
+   advisory, not binding, but provides structured input to the next
+   TSC vote.
+4. **Right to fork remains.** Persistent dysfunction is itself a
+   signal that the protocol should evolve, including the possibility
+   of governance restructuring (which requires unanimous TSC, i.e.,
+   the same dysfunctional body) or, in extremis, a fork that adopts
+   different mechanics. The credible-fork-threat applies to governance
+   the same way it applies to every other layer of the protocol.
+
+The honest framing for all four scenarios: the protocol cannot
+guarantee that the first 24 months will go well. It can specify what
+the *failure modes* of those 24 months look like, so the failures are
+absorbed by named continuity protocols rather than by ad-hoc
+improvisation.
 
 ---
 

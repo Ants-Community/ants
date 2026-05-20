@@ -58,6 +58,12 @@ We are building the same thing, with software. We call it **ANTS**.
 
 ---
 
+## We Acknowledge
+
+18. **We depend, today, on hardware we did not build.** The TEE attestation that gives each peer its identity is signed by hardware made by Intel, AMD, ARM, Apple, Qualcomm — corporations we do not control and whose attestation roots we cannot fully audit. We accept this honestly as the cost of being able to build at all in 2026. We commit to migrating to open-hardware TEE roots as soon as they are production-grade — realistically 2030–2032, not sooner. Until then, the protocol's Sybil resistance rests on hardware-vendor trust we cannot eliminate, only minimize and witness. We work toward the day this thesis is obsolete.
+
+---
+
 ## The Colony Asks
 
 If you have a machine, run a node.

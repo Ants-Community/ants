@@ -1,6 +1,6 @@
 # RFC-0010 — Bootstrap Sequence
 
-**Status:** Draft · v0.3
+**Status:** Draft · v0.4
 **Topic:** What the first peer does when it runs the reference client, and how the network evolves from one attested peer to a self-secured colony.
 **Audience:** You, if you are about to implement the bootstrap of the reference client.
 **Depends on:** [GOVERNANCE.md](../GOVERNANCE.md), [RFC-0001](./RFC-0001-community-economy.md), [RFC-0002](./RFC-0002-semantic-cache.md), [RFC-0003](./RFC-0003-verification.md), [RFC-0004](./RFC-0004-reputation-pouh.md), [RFC-0005](./RFC-0005-identity.md), [RFC-0008](./RFC-0008-wire-formats.md), [RFC-0009](./RFC-0009-canonical-numerics.md)
@@ -447,6 +447,18 @@ An announcement is **admitted** (slot binding updated network-wide) when
    epochs, calibratable). Announcements outside this window are
    rejected as stale or premature — the same anti-replay discipline
    bond admission uses.
+
+   **Unit note (added in v0.3 Round 4 EDGE).** "Epoch" in this rule
+   refers to the L2 `EPOCH_DURATION` constant (RFC-0008 §7, default
+   24 hours), **not** the `POUH_BLOCK_TIME` (30 seconds). The 7-epoch
+   default window is therefore approximately **1 week of wall-clock
+   time**, not 3.5 minutes of block-clock time. Drand outages (RFC-0008
+   §4.3) do not collapse this window: epochs continue to advance via
+   the degraded-seed fallback, so the wall-clock duration of an
+   admission window is robust to entropy-source outages of any duration
+   the protocol survives. This unit clarification closes a misreading
+   noted in the multi-persona Round 2 review (cold-eyed software
+   engineer persona).
 
 The 2/3-of-other-trustees threshold mirrors RFC-0004's L2 finality:
 rotation is a coordination object across the trustee set, so the same

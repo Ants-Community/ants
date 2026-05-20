@@ -7,15 +7,15 @@ The protocol is structured as a stack of layers. Reading order matches dependenc
 | Number | Topic | Status | Depends on |
 |--------|-------|--------|------------|
 | [RFC-0001](./RFC-0001-community-economy.md) | Community Layer Economics — barter, the local ledger, choke/unchoke, the specialist credit problem | Draft v0.3 | RFC-0002, RFC-0006 |
-| [RFC-0002](./RFC-0002-semantic-cache.md) | Semantic Cache Layer — distributed memory; canonical embedding model governance; producer royalty 60–70% band | Draft v0.3 | RFC-0008, RFC-0009 |
+| [RFC-0002](./RFC-0002-semantic-cache.md) | Semantic Cache Layer — distributed memory; canonical embedding model governance; producer royalty 60–70% band; verifiability-tax vs royalty separation | Draft v0.4 | RFC-0008, RFC-0009 |
 | [RFC-0003](./RFC-0003-verification.md) | Verification — three tiers, unified by commit-at-send + anytime-valid e-process; closed-form deterrence threshold | Draft v0.2 | RFC-0001, RFC-0002, RFC-0004, RFC-0005 |
 | [RFC-0004](./RFC-0004-reputation-pouh.md) | Reputation — two-layer CRDT/PoUH + (A,T,κ) spine + bonds with accounting + pruning, partition recovery with saturating T_eff fork choice, archive-node DoS defence, selective disclosure | Draft v0.6 | RFC-0003, RFC-0005, RFC-0008 |
-| [RFC-0005](./RFC-0005-identity.md) | Identity — hardware attestation, multi-vendor TEE, Sybil economics, attestation freshness window | Draft v0.1 (early) | — |
+| [RFC-0005](./RFC-0005-identity.md) | Identity — hardware attestation, multi-vendor TEE, Sybil economics, attestation freshness window, 2028-2030 vulnerability window, historical TEE vulnerabilities catalogue, vendor revocation propagation | Draft v0.1 (early) | — |
 | [RFC-0006](./RFC-0006-payment-terms.md) | Payment Terms & Economic Pluralism — how multiple economies coexist | Draft v0.1 (early) | RFC-0001 |
-| [RFC-0007](./RFC-0007-governance.md) | Post-v1.0 Governance — TSC mechanics, transition from BDFL | Draft v0.1 | [GOVERNANCE.md](../GOVERNANCE.md) |
-| [RFC-0008](./RFC-0008-wire-formats.md) | Wire Formats, Crypto Primitives, Reference Constants — the implementation glue; drand failover, BLS/Ed25519 K-transition, constant-time VRF (ELL2); Round-4 constants (T_FORK_CHOICE_CAP, R_ARCHIVE_MIN, EMERGENCY_REVOCATION_WINDOW, ATTESTATION_FRESHNESS_WINDOW) | Reference v0.4 | — |
+| [RFC-0007](./RFC-0007-governance.md) | Post-v1.0 Governance — TSC mechanics, transition from BDFL, size-scaled petition threshold, chair agenda-setting acknowledgment, catastrophic transition scenarios | Draft v0.2 | [GOVERNANCE.md](../GOVERNANCE.md) |
+| [RFC-0008](./RFC-0008-wire-formats.md) | Wire Formats, Crypto Primitives, Reference Constants — the implementation glue; drand failover with quantified grinding compounding bound, BLS/Ed25519 K-transition with epoch-atomic disambiguation, constant-time VRF (ELL2); additional Round-4 constants (VENDOR_REVOCATION_PROPAGATION_BOUND, DRAND_OUTAGE_EMERGENCY_THRESHOLD) | Reference v0.5 | — |
 | [RFC-0009](./RFC-0009-canonical-numerics.md) | Canonical Numerics for Verifiable Inference — INT8-GPTQ default + FP16 fallback; Y_canon unifies serving/caching; q24 collision bounds; bit-exact per-token scale | Draft v0.4 (early) | RFC-0002, RFC-0003, RFC-0008 |
-| [RFC-0010](./RFC-0010-bootstrap.md) | Bootstrap Sequence — genesis state, first peer's flow, four-phase capability matrix, reference launch recipe, in-protocol trustee key rotation with asynchronous equivocation escape hatch | Draft v0.3 | all design RFCs + RFC-0008, RFC-0009 |
+| [RFC-0010](./RFC-0010-bootstrap.md) | Bootstrap Sequence — genesis state, first peer's flow, four-phase capability matrix, reference launch recipe, in-protocol trustee key rotation with asynchronous equivocation escape hatch and unit clarification | Draft v0.4 | all design RFCs + RFC-0008, RFC-0009 |
 | [RFC-0011](./RFC-0011-formal-model.md) | Formal Model of Cross-Layer Composition — invariants, threat model, composition properties (TLA+ spec of intent) | Draft v0.1 | all design RFCs + RFC-0008, RFC-0009, RFC-0010 |
 
 ## Status legend

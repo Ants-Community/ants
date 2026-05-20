@@ -185,6 +185,70 @@ all along.
 A perpetual hardware-only Sybil deterrent does not exist. The honest
 answer is the stack of three defences above, not the table.
 
+### The 2028–2030 vulnerability window
+
+*Added Round 4 EDGE to address the concern raised by the multi-persona
+Round 2 review (TEE-security persona): the three long-term-wall defences
+are cumulative in the corpus but additive in effectiveness only if all
+three hold.*
+
+The three defences above (network growth, open-hardware migration,
+(A, T, κ) amortisation) are designed to overlap so that none is
+load-bearing alone. They do overlap — *in steady state*. There is a
+transient window where each is structurally weak at the same time, and
+the corpus should name it rather than let it sit as an unstated risk:
+
+- **Network growth** is at its weakest before RFC-0010 Phase 3 (N ≥ 100
+  attested peers) is reached. Pre-Phase-3, the 10%-control cost of the
+  network is at most a few × the per-peer cost — comfortably within
+  state-actor budgets and within a determined commercial adversary's
+  budget.
+- **Open-hardware TEE migration** is realistically 2030–2032 per
+  §"The long-term open-hardware path", not 2027–2028 as the v0.1
+  (early) draft hoped. Until then, all attestation flows through the
+  five named closed-vendor families.
+- **(A, T, κ) amortisation** is calibrated by b2 against a running
+  testnet. The testnet does not yet exist; the reference client is on
+  the 24–36 month critical path of IMPLEMENTATION.md; b2 measurement
+  cannot begin until then. The κ-rate-cap that makes the amortisation
+  work is consequently still a default parameter, not an empirically
+  tuned one.
+
+The window where all three defences are *simultaneously weak* is
+therefore approximately **2028–2030**: after the reference client is
+likely to be shipping but before either open-hardware TEE has matured
+or the network has reached Phase 3 scale. In this window, the
+protocol's Sybil resistance rests largely on the cost-asymmetry wall
+(§Sybil economics) and on the (A, T, κ) spine running with default —
+not measured — parameters.
+
+This is not a defect we will eliminate by writing differently. It is
+the *expected* vulnerability profile of a permissionless protocol
+bootstrapping from zero. The honest mitigations during this window are
+operational, not architectural:
+
+1. **The foundation per Manifesto Thesis 16** acts as a credible
+   coordinator for emergency response during the vulnerable phase —
+   exactly the role for which the foundation exists. The foundation is
+   not the network's authority; it is the network's *first responder*
+   while the network is too small to defend itself.
+2. **GOVERNANCE.md sunset checkpoints** (the 6-month and 24-month
+   reviews) include explicit attention to the vulnerability window: if
+   Phase 3 has not been reached at the 24-month checkpoint and the
+   reference client is not yet shipping b2 data, the BDFL publishes a
+   candid assessment per the "5-year clause."
+3. **The credible-fork-threat** remains the irreducible coordination
+   floor: a network that begins to fail in 2028–2030 can still be
+   forked by its honest contributors to a recovered state, with all
+   the well-specified mechanics of RFC-0004 §Fork-recovery applied.
+
+The window will pass either by network growth reaching scale, by
+open-hardware acceptance arriving, by b2 calibration converging, or
+(in the failure case) by the candid assessment that the protocol's
+particular design needs reconsidering. Naming the window now lets the
+project measure progress against it rather than discover it as a
+surprise.
+
 ---
 
 ## The long-term open-hardware path
@@ -256,11 +320,97 @@ Practically, peers may *choose* to publish associations between their hardware i
 
 **Vendor compromise.** A vendor's attestation signing key is compromised. The attacker can mint unlimited fake identities. Mitigations: (a) multi-vendor weighting means single-vendor minting attacks are detected as anomalies (sudden spike in single-vendor identities); (b) the vendor publishes a key rotation, old attestations are invalidated, peers re-attest with the new key; (c) in extreme cases, the affected vendor is temporarily downweighted by network coordination.
 
+**Vendor revocation propagation timing** *(added Round 4 EDGE).* When a vendor publishes a revocation (TCB bump, key rotation, or specific batch invalidation), the protocol bounds the window during which old attestations remain accepted by `VENDOR_REVOCATION_PROPAGATION_BOUND` (RFC-0008 §7, default **72 hours**). The mechanism: revocations are propagated as L1 CRDT objects (same gossip channel as fault proofs), each carrying the vendor's signed revocation manifest. After 72 hours from a revocation's first observation by any honest peer, peers reject attestations matching the revoked identifier regardless of whether they have personally seen the revocation. The bound is calibratable on b2 evidence; 72 hours is the rough fit to typical vendor disclosure-to-network-propagation latency in 2026 and is short enough that a post-disclosure attack window is operationally costly but long enough that honest operators in poorly-connected jurisdictions have time to refresh. A peer presenting a revoked attestation after the bound is treated identically to a peer presenting a stale attestation per §Attestation freshness window.
+
 **TEE vulnerability discovery.** A new side-channel attack (similar to historical examples like Spectre/Meltdown) allows extracting attestation keys from a TEE. Mitigations: most attacks require physical or co-located access, limiting scale. Vendors release firmware patches; old vulnerable peers are flagged.
 
 **Hardware re-attestation farming.** An attacker buys 1000 TEE-capable devices once and re-uses them indefinitely. Defence: this is not really an attack — the attacker has 1000 identities for the cost of 1000 devices, which is the expected pricing. Nothing to mitigate.
 
 **Stolen TEE.** A laptop is stolen, the thief tries to use its ANTS identity. Defence: the identity is bound to the TEE, which the thief now has. But the original owner can publish a revocation event (signed by their own backup key, which the protocol provides at identity creation time). The stolen identity is then untrusted.
+
+---
+
+## Historical TEE vulnerabilities and the protocol's response posture
+
+*Added Round 4 EDGE to address the concern raised by the multi-persona
+Round 2 review (TEE-security persona): the corpus depends on TEE
+attestation and does not catalogue the historical vulnerability record
+of that hardware, leaving each new disclosure as a future emergency.*
+
+TEEs have been broken before. They will be broken again. A protocol
+that pretends otherwise is a protocol that handles its first CVE as a
+surprise. This section catalogues the recurring failure modes so the
+protocol's response posture is specified before, not during, the next
+disclosure.
+
+### A non-exhaustive catalogue
+
+| Year | Name | Affected family | Class | Vendor response |
+|---|---|---|---|---|
+| 2018 | Spectre / Meltdown / Foreshadow | Intel SGX, all x86 | Speculative-execution side channel | Microcode + OS mitigations; SGX TCB bump |
+| 2019 | Plundervolt | Intel SGX | Voltage-fault injection | Microcode disable of undervolting from untrusted code |
+| 2020 | SGAxe | Intel SGX | Cache side-channel | TCB recovery + attestation re-issue |
+| 2021 | ÆPIC Leak | Intel SGX | Architectural register leakage | Microcode + TCB bump |
+| 2023 | Downfall | Intel SGX, AVX | Gather-instruction microarchitectural leak | Microcode patch + measurable performance impact |
+| 2023 | Inception (Phantom) | AMD SEV-SNP | Branch-prediction-based control-flow hijack | AGESA firmware update |
+| 2023 | CacheWarp | AMD SEV-SNP | Cache-line write rollback | Firmware update |
+| 2024 | Heckler | AMD SEV-SNP | Malicious-hypervisor interrupt injection | Firmware + Linux kernel mitigations |
+| various | Cross-VM Spectre variants | Cloud-hosted TEEs (any vendor) | Co-tenant side channel | Hypervisor isolation + scheduler mitigations |
+
+The list is illustrative, not complete. Each entry shares a structure:
+disclosure → vendor TCB-recovery procedure → attestation re-issue with
+a new firmware identifier → old attestations marked stale → time for
+peers to refresh.
+
+### The response posture
+
+The protocol's posture in front of a new disclosure is **the same on
+day one as on day N**: every attested peer is bound to a specific TEE
+firmware identifier carried in its attestation, every attestation is
+checked against the freshness window of §Attestation freshness window,
+and the vendor's TCB-recovery is propagated as ordinary attestation
+re-issue. Three concrete behaviours:
+
+1. **No protocol-version bump is required to absorb a new
+   vulnerability.** The mechanism for accepting "the new TCB" and
+   rejecting "the old TCB" is built into the freshness-window check
+   and the vendor's published revocation. The protocol does not need
+   to redeploy code to handle a CVE; peers need to refresh attestations.
+2. **The multi-vendor weighting (§Multi-vendor reputation weighting)
+   contains the blast radius.** A vulnerability affecting one vendor
+   family weakens but does not collapse the network. Peers with
+   multi-vendor attestation continue at near-full weight; single-vendor
+   peers on the affected family drop to zero weight until they refresh
+   to a patched TCB or supplement with another vendor.
+3. **The vendor's revocation timing is bounded.** §"Vendor revocation
+   propagation" (below) makes the revocation-propagation latency
+   explicit, so the post-disclosure window of "old attestations still
+   accepted" is bounded, not undefined.
+
+The honest framing: the protocol cannot prevent TEE vulnerabilities
+from being discovered. It can ensure that the discovery is absorbed by
+the same primitives the protocol already uses, in a bounded time, with
+graceful degradation rather than catastrophic failure. That posture is
+the contribution this section makes — not a claim that TEEs are safe,
+but a specification of what happens when they are not.
+
+### What this does not solve
+
+A **zero-day exploited in the wild before disclosure** is the case
+this section cannot defend against. An attacker with a working
+side-channel against (say) AMD SEV-SNP, used quietly to mint Sybil
+identities, leaves no observable trace until the vulnerability is
+publicly disclosed. The multi-vendor weighting limits the damage —
+single-vendor anomalies are detectable as anomalies — but does not
+prevent the attack window.
+
+This is part of the irreducible residual handed to the
+credible-fork-threat. A network that learns *post hoc* that 30% of its
+attested identities were minted via an undisclosed SEV-SNP exploit can,
+in principle, reissue identities on the basis of the disclosed-and-patched
+TCB and fork away from the compromised state. The mechanism is the
+same `Σ T_eff` fork-choice + social-Schelling fallback that handles
+every other state-actor-residual scenario.
 
 ---
 
