@@ -371,7 +371,7 @@ changes within a major version are permitted.
 | `EMBEDDING_DIM` | RFC-0002 | 1024 | P |
 | `SHARD_KEY_BITS` | RFC-0002 | 64 | P |
 | `CACHE_HIT_FEE_FRACTION` | RFC-0001 / 0002 | 10% (5–15% band) | C |
-| `PRODUCER_ROYALTY_FRACTION` | RFC-0002 | 50% of cache-hit fee | C |
+| `PRODUCER_ROYALTY_FRACTION` | RFC-0002 | 65% of cache-hit fee (60–70% band) | C |
 | `CACHE_REPLICATION_FACTOR` | RFC-0002 | 3 | C |
 | `SIMILARITY_THRESHOLD` | RFC-0002 | 0.92 cosine | C |
 | `CHOKE_WINDOW` | RFC-0001 | 20 minutes | C |

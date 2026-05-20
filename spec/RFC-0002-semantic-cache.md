@@ -1,6 +1,6 @@
 # RFC-0002 — Semantic Cache Layer
 
-**Status:** Draft · v0.2
+**Status:** Draft · v0.3
 **Topic:** The distributed memory of the network. How peers retain, address, and reuse every honest answer the colony has ever given.
 **Audience:** You, if you are willing to disagree in writing.
 
@@ -324,7 +324,7 @@ The cache is the mechanism that resolves the structural pathology of pure barter
 
 - **Cache hosting** earns NCS continuously, based on storage capacity × uptime × shard popularity, paid to the host by the network through a small fraction of every cache-hit revenue.
 - **Cache hit** is a service the host provides to the requester. It costs the requester a small fraction (5-15%, network parameter) of the equivalent fresh-inference cost. The host receives this payment in NCS via the standard local-ledger mechanism.
-- **Producer royalty.** Of every cache-hit fee, a fraction (currently 50%) flows back to the *original producer* of the cached entry, recognised by their signature on the entry. This is the rent specialists earn from canonical answers. The other 50% goes to the host who served the lookup.
+- **Producer royalty.** Of every cache-hit fee, a fraction (currently **65%**, calibration band 60–70%, raised from the v0.1 50% in v0.3) flows back to the *original producer* of the cached entry, recognised by their signature on the entry. This is the rent specialists earn from canonical answers. The remaining 30–40% goes to the host who served the lookup. The rationale for the v0.3 raise: at the protocol's early phase the binding constraint is **specialist supply** (peers with deep expertise willing to produce canonical answers) rather than host supply (storage and bandwidth are commodified and abundant). Tilting the split toward the producer increases the long-tail incentive that makes the cache architecturally valuable. Hosts still earn from volume and from cache-hosting fees described above; the producer's share compounds over the entry's lifetime in a way the host's per-hit share already did. Calibratable per RFC-0008 §7 once b2 measures actual cache-hit volumes and specialist participation rates.
 - **Cache-write incentive.** When a peer performs fresh inference, they earn the immediate fee from the consumer *and* the right to royalty on all future retrievals of the cached entry. This is what makes writing to the cache rational rather than hoarding the answer.
 
 Note that in commercial economies (RFC-0006), the same mechanism operates with fiat instead of NCS, and the cache hosts may set their own retrieval prices declared via Payment Terms.
@@ -337,7 +337,7 @@ The places we would most like sharp eyes:
 
 - **Similarity threshold for cache hits.** 0.92 cosine is a guess. Below it, the cache misses too often; above it, we serve answers that aren't actually relevant. Domain-dependent. Probably needs to be configurable per-query.
 - **Cache-hit payment fraction.** 5-15% of fresh inference cost is a guess. Field data needed.
-- **Producer royalty fraction.** 50% of cache-hit revenue to the original producer is a guess that balances "specialists keep contributing" with "hosts get paid enough to bother."
+- **Producer royalty fraction.** v0.3 raised the default to 65% (60–70% calibration band) based on the early-phase argument above; it remains a calibrated parameter, not a derived constant, and may be revisited if testnet evidence shows the host side is under-incentivised.
 - **Shard-key bit length.** 64 bits is enough for ~10^14 distinct shards. Probably overkill; might shrink to 48.
 - **Replication factor.** 3-5 copies of each entry — is this enough for durability across peer churn? Empirical question.
 - **Validity classes.** Should there be more granularity? Fewer? Should producers declare them or should the network infer them from content?

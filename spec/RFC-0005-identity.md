@@ -95,6 +95,53 @@ At all but the very smallest network sizes, the cost of Sybil attack exceeds any
 
 The cost is **not high enough to defend against nation-state attackers** at small network sizes. A government willing to spend $10M to corrupt the protocol when the network has only 1,000 peers could plausibly succeed. This is one of several reasons the protocol's early phase is the most vulnerable, and one of several reasons the manifesto declares (Thesis 16) that ANTS is stewarded by a foundation, not a company — to make the foundation a credible coordinator for emergency response during the vulnerable period.
 
+### Price erosion: the snapshot is not a permanent floor
+
+The table above is a 2026 snapshot, not a permanent floor. Confidential
+compute pricing has followed a clear downward trajectory since its
+mainstream availability around 2020: roughly **15–25% real-terms
+year-over-year decline** as the underlying silicon moves from premium
+SKU into commodity server fleets and as a second wave of providers
+competes with the original three hyperscalers. There is no Moore's-law
+guarantee here — confidential compute is constrained by attested silicon
+supply, not transistor count — but the trend is real and the protocol
+must plan for it.
+
+A useful projection, taking 20%/yr as the central estimate, with the
+honest caveat that the trend can flatten or reverse if (a) attested
+silicon supply tightens, (b) regulatory mandates push cost up, or (c)
+TEE vendors price for differentiation rather than volume:
+
+| Year | 10% control of a 100,000-peer network | Equivalent in 2026 dollars |
+|---|---|---|
+| 2026 | ~$7.0M | $7.0M (baseline) |
+| 2028 | ~$4.5M | (~36% cheaper than 2026 in real terms) |
+| 2030 | ~$2.9M | (~59% cheaper) |
+| 2032 | ~$1.9M | (~73% cheaper) |
+| 2035 | ~$1.0M | (~86% cheaper) |
+
+The mechanism the protocol relies on as price erodes is **network
+growth**. Sybil cost scales linearly with target network size (10% of N
+peers costs 0.1·N·c_TEE, where c_TEE is the per-peer rental). As long
+as N grows faster than c_TEE falls, the absolute Sybil cost rises.
+RFC-0010's Phase 3 (100–999 peers) and Phase 4 (1,000+) are the windows
+in which this race is decided.
+
+**The honest framing.** Hardware-attested identity is a **decade-class
+Sybil deterrent, not a perpetual one**. The half-life of the deterrent's
+absolute strength under price erosion is roughly 4 years at 20%/yr. The
+protocol's long-term defence against this erosion is not "TEE will stay
+expensive forever" — it is the combination of (a) network growth
+outpacing price decline, (b) the open-hardware migration of §"The
+long-term open-hardware path" reducing dependence on vendor pricing
+power entirely, and (c) the (A, T, κ) spine in RFC-0004 making mere
+identity-creation insufficient — the attacker must also amortize each
+identity with sustained honest contribution, which is what we wanted
+all along.
+
+A perpetual hardware-only Sybil deterrent does not exist. The honest
+answer is the stack of three defences above, not the table.
+
 ---
 
 ## The long-term open-hardware path
@@ -109,11 +156,26 @@ The protocol's identity layer commits to migrating, over the next decade, toward
 
 The protocol commits to:
 
-1. Accept open-hardware TEE attestations *as soon as* they are production-grade. Currently planned: 2027–2028 for Keystone, OpenTitan acceptance.
-2. Weight open-hardware attestations *higher* than closed-vendor attestations in reputation calculation, as a deliberate incentive for migration.
-3. By v2.0 (long after v1.0), the protocol intends to require *at least one* open-hardware attestation for validator participation — eliminating the dependence on closed corporate roots-of-trust at the most security-critical layer.
+1. Accept open-hardware TEE attestations *as soon as* they are
+   production-grade. Realistic horizon: **2030–2032** for first
+   production-grade Keystone or OpenTitan acceptance. The earlier
+   2027–2028 estimate in v0.1 (early) of this RFC was optimistic; open
+   silicon, audit, supply chain, and ecosystem maturity together take
+   longer than the research roadmap implies. We say so honestly here
+   rather than carry a date that will quietly slip.
+2. Weight open-hardware attestations *higher* than closed-vendor
+   attestations in reputation calculation, as a deliberate incentive
+   for migration.
+3. By v2.0 (long after v1.0), the protocol intends to require *at least
+   one* open-hardware attestation for validator participation —
+   eliminating the dependence on closed corporate roots-of-trust at the
+   most security-critical layer.
 
-This is a multi-year migration. It is included in this RFC because the alternative — pretending closed hardware is permanently acceptable — would be dishonest.
+This is a multi-year migration measured in **half-decade scale, not
+2–3-year scale**. It is included in this RFC because the alternative —
+pretending closed hardware is permanently acceptable — would be
+dishonest. Pretending the migration is around the corner would also be
+dishonest, and we now say that too.
 
 ---
 

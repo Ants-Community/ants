@@ -73,9 +73,15 @@ The BDFL is encouraged to defer to subsystem maintainers and to working groups, 
 
 The project adopts the Contributor Covenant 2.1, available as `CODE_OF_CONDUCT.md`.
 
-Enforcement is the BDFL's responsibility during the v0.x period, exercised through a published incident log. The BDFL may delegate routine moderation (Matrix room moderation, GitHub issue triage) to specifically named community moderators, who report to the BDFL.
+Routine enforcement is the responsibility of a panel of **two to three community moderators**, named by the BDFL but operating with day-to-day autonomy. Moderators handle Matrix room moderation, GitHub issue triage, and first-line response to ordinary Code of Conduct incidents (warnings, temporary mutes, content removal, time-bounded participation suspensions). Decisions are recorded in a published incident log. A moderator must recuse herself from any case where she has a direct stake; the remaining moderator(s) then decide, or escalate if recusal leaves the panel below quorum.
 
-Serious incidents — accusations of harassment, doxxing, coordinated bad-faith activity — are handled directly by the BDFL, with consultation of subsystem maintainers where relevant. Outcomes are recorded transparently, with the privacy of affected parties protected.
+This design exists for two reasons. First, **single-point dependency on the BDFL is fragile**: a single overworked or out-of-pocket maintainer is a poor first responder, and turning every incident into a BDFL decision will quietly produce either a backlogged queue or an unaccountable rubber-stamp. Second, **community legitimacy of enforcement matters**: moderators drawn from the contributor body bring their own judgment and standing, and the panel is the part of the project most visibly governed by people other than the BDFL during the v0.x period.
+
+Serious incidents — accusations of harassment, doxxing, coordinated bad-faith activity, or any incident the moderator panel cannot resolve by consensus — escalate to the BDFL. The BDFL decides with consultation of subsystem maintainers and the moderator panel. Outcomes are recorded transparently in the incident log, with the privacy of affected parties protected.
+
+The BDFL retains a final-veto authority over moderator decisions during the v0.x period. The veto is intended for use only when a moderator panel decision is itself manifestly out of line with the Code of Conduct, and each invocation is recorded with explicit reasoning. Repeated invocation against the moderator panel's reasoned decisions is itself grounds for reconsidering the BDFL role — the same principle stated under §"The BDFL Model" applies here.
+
+After v1.0, routine enforcement remains panel-based; the TSC takes the BDFL's escalation role (with the same two-thirds threshold the TSC uses for canonical artefacts), per the post-v1.0 governance arrangements specified in [`spec/RFC-0007-governance.md`](./spec/RFC-0007-governance.md).
 
 ---
 

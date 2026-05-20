@@ -7,14 +7,14 @@ The protocol is structured as a stack of layers. Reading order matches dependenc
 | Number | Topic | Status | Depends on |
 |--------|-------|--------|------------|
 | [RFC-0001](./RFC-0001-community-economy.md) | Community Layer Economics — barter, the local ledger, choke/unchoke, the specialist credit problem | Draft v0.3 | RFC-0002, RFC-0006 |
-| [RFC-0002](./RFC-0002-semantic-cache.md) | Semantic Cache Layer — distributed memory; canonical embedding model governance | Draft v0.2 | RFC-0008, RFC-0009 |
+| [RFC-0002](./RFC-0002-semantic-cache.md) | Semantic Cache Layer — distributed memory; canonical embedding model governance; producer royalty 60–70% band | Draft v0.3 | RFC-0008, RFC-0009 |
 | [RFC-0003](./RFC-0003-verification.md) | Verification — three tiers, unified by commit-at-send + anytime-valid e-process; closed-form deterrence threshold | Draft v0.2 | RFC-0001, RFC-0002, RFC-0004, RFC-0005 |
 | [RFC-0004](./RFC-0004-reputation-pouh.md) | Reputation — two-layer CRDT/PoUH + (A,T,κ) spine + bonds with accounting + pruning, partition recovery, selective disclosure | Draft v0.5 | RFC-0003, RFC-0005, RFC-0008 |
 | [RFC-0005](./RFC-0005-identity.md) | Identity — hardware attestation, multi-vendor TEE, Sybil economics | Draft v0.1 (early) | — |
 | [RFC-0006](./RFC-0006-payment-terms.md) | Payment Terms & Economic Pluralism — how multiple economies coexist | Draft v0.1 (early) | RFC-0001 |
 | [RFC-0007](./RFC-0007-governance.md) | Post-v1.0 Governance — TSC mechanics, transition from BDFL | Draft v0.1 | [GOVERNANCE.md](../GOVERNANCE.md) |
 | [RFC-0008](./RFC-0008-wire-formats.md) | Wire Formats, Crypto Primitives, Reference Constants — the implementation glue; drand failover, BLS/Ed25519 K-transition, constant-time VRF (ELL2) | Reference v0.3 | — |
-| [RFC-0009](./RFC-0009-canonical-numerics.md) | Canonical Numerics for Verifiable Inference — INT8-GPTQ default + FP16 fallback; Y_canon unifies serving/caching | Draft v0.2 (early) | RFC-0002, RFC-0003, RFC-0008 |
+| [RFC-0009](./RFC-0009-canonical-numerics.md) | Canonical Numerics for Verifiable Inference — INT8-GPTQ default + FP16 fallback; Y_canon unifies serving/caching; q24 collision bounds | Draft v0.3 (early) | RFC-0002, RFC-0003, RFC-0008 |
 | [RFC-0010](./RFC-0010-bootstrap.md) | Bootstrap Sequence — genesis state, first peer's flow, four-phase capability matrix, reference launch recipe, in-protocol trustee key rotation | Draft v0.2 | all design RFCs + RFC-0008, RFC-0009 |
 | [RFC-0011](./RFC-0011-formal-model.md) | Formal Model of Cross-Layer Composition — invariants, threat model, composition properties (TLA+ spec of intent) | Draft v0.1 | all design RFCs + RFC-0008, RFC-0009, RFC-0010 |
 

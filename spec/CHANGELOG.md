@@ -885,6 +885,140 @@ acknowledged as irreducible or testnet-dependent.
 
 ---
 
+## Round 3 — EDGE register corrections · 2026-05-20
+
+The five EDGE-tier items from the multi-persona review of 2026-05-20,
+addressed in a single amendment. None of these closes an architectural
+gap; each corrects a register-level claim that a sharp reader would
+otherwise rightly challenge. Recording in one entry because they are
+register corrections, not design pivots.
+
+### RFC-0005 v0.1 → v0.1 (early, two amendments)
+
+**Was:** §"The long-term open-hardware path" claimed "Currently
+planned: 2027–2028 for Keystone, OpenTitan acceptance." §"Sybil
+economics" tabulated cloud-TEE costs at 2026 prices with no
+treatment of price erosion over time.
+
+**Now (timeline):** the realistic horizon is **2030–2032** for first
+production-grade Keystone or OpenTitan acceptance. Open silicon,
+audit, supply chain, and ecosystem maturity together take longer
+than the research roadmap implies. The earlier 2027–2028 estimate is
+named as optimistic; the corrected horizon is named as multi-year
+"half-decade scale, not 2–3-year scale".
+
+**Now (price erosion):** new §"Price erosion: the snapshot is not a
+permanent floor" subsection. Confidential-compute pricing has
+followed a roughly 15–25% real-terms annual decline since mainstream
+availability; the protocol must plan for the 2026 snapshot to erode
+on this trajectory. Projection table out to 2035 included with
+explicit caveats (trend can flatten or reverse). The honest framing
+recorded: hardware-attested identity is a **decade-class Sybil
+deterrent, not a perpetual one**, and the long-term defence is the
+stack of (a) network growth outpacing price decline, (b) the
+open-hardware migration of the §"open-hardware path", (c) the
+(A, T, κ) spine in RFC-0004 amortizing each identity with sustained
+honest contribution.
+
+**Why:** the previous text overstated both the migration speed and
+the durability of the cost wall. The 2026 table is correct as a
+snapshot but inert as a permanent claim. Stating the trajectory
+preserves the deterrent's honest framing.
+
+### RFC-0009 v0.2 → v0.3 — q24 collision and birthday-attack bounds
+
+**Was:** §"The unembedding step" stated "q24 — 24 fractional bits"
+and "7 decimal digits of precision, well above any honest
+discrepancy" but did not quantify what an attacker can do with q24
+collisions.
+
+**Now:** new §5.1 "q24 collision and birthday-attack bounds" makes
+the four relevant bounds explicit: single-logit collision 2⁻²⁴
+(insufficient on its own; never committed in isolation); full-position
+collision 2⁻²⁴ᵛ ≈ 2⁻⁷⁶⁸⁰⁰⁰ for V=32K (infeasible); Merkle-root
+collision 2¹²⁸ (the actual cryptographic-strength bound, provided by
+BLAKE3 not by q24); challenge-grinding closed by the beacon-posterior
+challenge sub-protocol of RFC-0003 §"Challenge unpredictability".
+q24 is named explicitly as the *value representation* that makes
+honest convergence possible, NOT as the collision-resistance layer.
+The widening path to q32 is reserved without exercising it.
+
+**Why:** the previous "7 decimal digits" framing was correct but
+under-specified the security argument. A reader could (and a
+reviewer did) reasonably ask whether 24 bits per logit is enough
+for collision resistance. The answer — "yes, because the
+collision-resistance is at the Merkle root above, q24 only needs
+to make honest implementations agree" — is now in the document.
+
+### RFC-0002 v0.2 → v0.3 — Producer royalty 50% → 65% (60–70% band)
+
+**Was:** §"Integration with the community economy" declared
+"Producer royalty: 50% of cache-hit fee" with the symmetric host
+share. §"What we have not figured out yet" noted the 50% as a
+balanced guess.
+
+**Now:** the producer share is **65%, with a 60–70% calibration
+band**, and the host share is the symmetric 30–40%. The economic
+rationale is named explicitly: at the protocol's early phase the
+binding constraint is **specialist supply**, not host supply
+(storage and bandwidth are commodified and abundant in the
+addressable peer population). Tilting the split toward the producer
+increases the long-tail incentive that makes the cache
+architecturally valuable — the producer earns on every retrieval
+over the entry's lifetime; the host earns on volume across
+many entries. RFC-0008 §7 `PRODUCER_ROYALTY_FRACTION` updated to
+"65% (60–70% band)".
+
+**Why:** the symmetric 50/50 split treated the two sides as
+interchangeable at parameter-setting time; the reviewer correctly
+noted that the asymmetric supply elasticity argues for an
+asymmetric split. The exact share remains a calibrated parameter,
+revisable on b2 evidence; what changed is the default and the
+explicit naming of which side the protocol believes is the
+binding constraint.
+
+### GOVERNANCE — CoC enforcement via 2–3 community moderators panel (not BDFL-only)
+
+**Was:** §"Code of Conduct and enforcement" placed routine
+enforcement on the BDFL with the option to delegate to "specifically
+named community moderators, who report to the BDFL."
+
+**Now:** routine enforcement is the responsibility of a **panel of
+two to three community moderators**, named by the BDFL but operating
+with day-to-day autonomy. The panel handles Matrix moderation,
+GitHub triage, and first-line response (warnings, temporary mutes,
+content removal, time-bounded suspensions). Serious incidents
+(harassment, doxxing, coordinated bad-faith activity, or anything
+the panel cannot resolve by consensus) escalate to the BDFL during
+v0.x and to the TSC after v1.0. The BDFL retains a final-veto
+authority over moderator decisions, used sparingly and recorded
+with reasoning when used.
+
+**Why:** single-point dependency on the BDFL is fragile (overworked
+maintainers are poor first responders; backlog or rubber-stamp are
+the realistic failure modes) and community legitimacy of
+enforcement matters (a panel from the contributor body brings its
+own standing). The change preserves BDFL escalation authority while
+moving the first response to a panel that is structurally less
+prone to either failure mode.
+
+### State after Round 3
+
+All review items from `REVIEW-multi-persona-2026-05.md` are now
+closed: 4 BLOCKs (Round 1, commit `f6fe3bd`), 3 HARDs (Round 2,
+commit `93ef697`), 2 Round-2 residuals (commit `aec1180`), 5 EDGEs
+(this entry). Remaining items are testnet-empirical (b2-class
+measurements: `σ`, `e`, `T_prop`, `w`, partition-recovery rehearsal,
+royalty-share calibration, ROTATION_ADMISSION_WINDOW tuning, cache
+hit volumes for the producer/host elasticity split) or explicit
+irreducible residuals handed to the credible-fork-threat.
+
+The named reviewers from the multi-persona review are worth crediting
+in this CHANGELOG with consent at the point of public acknowledgement,
+once that round is appropriate.
+
+---
+
 ## RFC-0008 · v0.2 → v0.3 + RFC-0010 · v0.1 → v0.2 · 2026-05-20 · ECVRF constant-time + in-protocol trustee key rotation
 
 Closes the two Round-2 residuals left out of the `93ef697` corpus: the

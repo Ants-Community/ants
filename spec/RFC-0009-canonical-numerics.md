@@ -1,6 +1,6 @@
 # RFC-0009 — Canonical Numerics for Verifiable Inference
 
-**Status:** Draft · v0.2 (early — substantial revision expected once the reference kernel library exists and the b2 testnet measures its honest-noise floor)
+**Status:** Draft · v0.3 (early — substantial revision expected once the reference kernel library exists and the b2 testnet measures its honest-noise floor)
 **Topic:** The numerical recipe that two honest peers, on different hardware, must agree on bit-for-bit when committing to verifiable inference.
 **Audience:** You, if you have ever stared at two correct-looking GPU implementations producing slightly different logits and wanted to scream.
 **Depends on:** [RFC-0003](./RFC-0003-verification.md), [RFC-0008](./RFC-0008-wire-formats.md)
@@ -187,6 +187,64 @@ inclusion.
 The q24 representation gives 7 decimal digits of precision, well above what
 any honest discrepancy ever produces, while ensuring two implementations that
 agree to 7 digits produce bit-identical hashable values.
+
+### 5.1 · q24 collision and birthday-attack bounds
+
+*Added in v0.3.* A reviewer correctly asked for the quantitative
+collision bounds q24 supports, since "24 fractional bits" alone does
+not tell you what an attacker can do.
+
+The protocol commits to the q24 logit *vector* per audited position, not
+to a scalar — a position commitment is `V` independent q24 values where
+`V` is the model's vocabulary size (typically 32K–150K for current
+open-weight LLMs). The relevant attack surfaces:
+
+**(a) Single-logit collision.** An attacker who controls one FP32 logit
+hits a target q24 value with probability `2⁻²⁴ ≈ 6 × 10⁻⁸` under a
+uniform model. Trivially insufficient for security on its own — the
+commitment is never on a single logit.
+
+**(b) Full-position collision (all `V` logits).** The attacker must
+produce a fraudulent computation whose q24 vector matches the honest
+q24 vector at every one of the `V` vocabulary entries. Under
+independence, the success probability is `2⁻²⁴ᵛ`. For `V = 32K`,
+`2⁻²⁴ᵛ ≈ 2⁻⁷⁶⁸⁰⁰⁰` — infeasible by any margin we care to compute.
+
+**(c) Birthday on the full Merkle root.** The per-position q24 vectors
+feed into BLAKE3 leaves (`ants-v1-logit-trace-leaf` per RFC-0008 §4.1),
+and the leaves feed into a 32-byte (256-bit) Merkle root
+(`ants-v1-logit-trace-root`). A generic birthday on this root requires
+`2¹²⁸` work — the standard 128-bit collision-resistance bound of any
+256-bit hash. q24 is **not** load-bearing for collision resistance at
+the root level; BLAKE3 is. q24 provides the *value-level reproducibility
+floor* that the integer-canonical recipe needs in order to produce
+bit-identical leaves across honest hardware in the first place.
+
+**(d) Grinding the challenge.** The Tier 2 e-process audits a subset of
+positions chosen by the beacon-bound challenge sub-protocol of RFC-0003
+§"Challenge unpredictability". The challenge seed is derived from a
+public beacon released **posterior to** the producer's commit (the
+non-grindable anchor of §"Challenge unpredictability"). The producer
+cannot precompute which positions will be audited, so a "find some
+input that produces the same q24 at the auditor-chosen positions"
+attack reduces to (b), not to a per-position search the producer can
+batch in advance.
+
+**The honest framing.** q24 is the *value representation* that makes
+honest convergence possible across heterogeneous hardware (σ-floor at
+roughly the q24 LSB ≈ `6 × 10⁻⁸`, which the canonical integer recipe
+clears trivially). Its collision resistance per single logit (2⁻²⁴) is
+not, on its own, cryptographic strength; cryptographic strength comes
+from the BLAKE3 Merkle root above q24 and from the unpredictable
+challenge below it. The three combine to give an attacker no path
+shorter than `2¹²⁸` to a verifying fraud — same as any well-built
+commitment scheme.
+
+If a future iteration needs more bits (e.g., if `V` grows large enough
+that even (b) becomes worth re-examining, or if a sub-q24 honest noise
+floor is later measured by b2), the representation is straightforward
+to widen — q32 doubles the per-logit bits at a small wire-format cost.
+This RFC reserves the option without exercising it.
 
 ---
 
