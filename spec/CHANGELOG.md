@@ -322,3 +322,122 @@ same shape as every "trust-closed" claim in the corpus. The amendment does
 not claim to close it. It claims to narrow it.
 
 ---
+
+## RFC-0008 + RFC-0009 · added · 2026-05-20 · Technical references for implementation
+
+Two new RFCs added together, in service of the same goal: close the
+pre-implementation criticality gaps that would otherwise force the
+reference-client engineers to guess on dozens of byte-level choices and one
+genuinely hard numerical-recipe choice.
+
+These are not design RFCs in the same sense as 0001–0006. They are
+prescriptive engineering references — the boring glue that the design RFCs
+presupposed but never wrote down. We add them now, before code begins, so
+that "the spec" and "the implementation" can speak the same language.
+
+### What was missing
+
+A pre-implementation cold-read of the v0.3 corpus identified six BLOCK-level
+gaps that would have stalled coding within weeks: an undefined canonical
+numerical recipe (RFC-0003 named it as a leverage, did not specify it); an
+unspecified TEE attestation wrapper format across 6 vendor families; an
+absent bootstrap sequence; an unspecified embedding-model versioning
+mechanism; an under-specified bond accounting model; and the fork-recovery
+bond circularity. Several GAP-level issues were equally blocking in
+aggregate: undefined PRF, undefined hash function, undefined signature
+scheme, undefined wire encoding, undefined NCS representation, undefined
+test-vector format.
+
+The design RFCs left these underspecified for honest reasons — they are not
+*design* questions, they are *engineering* questions, and writing a
+prescriptive engineering reference inside a design RFC dilutes both. But
+without them, the implementation cannot start.
+
+### RFC-0008 — Wire Formats, Crypto Primitives, Reference Constants (Reference v0.1)
+
+A living-standard technical reference that pins, in one place:
+
+- **CBOR** ([RFC 8949](https://www.rfc-editor.org/rfc/rfc8949)) with
+  deterministic encoding for protocol objects; **JSON** for human-facing.
+- **BLAKE3** for protocol-internal hashing (Merkle trees, content
+  addressing); **SHA-256/384** preserved for TEE-attestation compatibility.
+- **Ed25519** for peer signatures; **ECDSA-P256** preserved for TEE;
+  **BLS12-381** for L2 PoUH committee signature aggregation.
+- **BLAKE3.derive_key** as the PRF for beacon-bound selection, with a
+  reserved domain-separation table.
+- **ECVRF-EDWARDS25519-SHA512-TAI** ([RFC 9381](https://www.rfc-editor.org/rfc/rfc9381))
+  for VRF committee selection; **drand** (League of Entropy) as external
+  entropy beacon.
+- **u64 micro-NCS** (μNCS, 10⁻⁶ NCS) for all ledger arithmetic; floats
+  forbidden in protocol-level objects.
+- **Embedding model pinning mechanism** — BGE-M3 weights+tokenizer hashed
+  with BLAKE3, exact checkpoint hash filled when the reference client
+  ships.
+- **A consolidated reference-constants table** of every parameter scattered
+  across 0001–0006, with explicit Pinned vs Calibratable markers.
+- **Test-vector framework** — a sibling repo, structure declared here,
+  populated by the reference client.
+
+Status is **Reference (living standard)** rather than **Draft** because the
+document's relationship to argument is different — once a primitive is
+pinned, it changes only via a coordinated breaking event, not via the
+"written to be argued with" cadence of the design RFCs.
+
+### RFC-0009 — Canonical Numerics for Verifiable Inference (Draft v0.1 early)
+
+The hardest deliverable in the corpus, made explicit. The recipe RFC-0003
+named as a leverage but did not specify, now specified — partially, and we
+say so plainly.
+
+**Default recipe**: INT8 weight quantization (GPTQ per-channel symmetric,
+group 128) with integer-domain activations and pinned reduction order on the
+audited path. Integer arithmetic is associative; two honest implementations
+on different hardware produce bit-identical outputs. The `σ` honest-noise
+floor under this recipe is essentially zero, which makes the e-process test
+of RFC-0003 §Tier 2 trivial for any non-zero quantization fraud.
+
+**Fallback**: FP16 with constrained kernel selection and deterministic
+reduction order for models where INT8 quantization is not viable (some QAT
+models, exotic architectures). σ is small (10⁻⁵ to 10⁻⁴) but not zero;
+the e-process still works, with worse constants.
+
+**Verifiability tax** quantified: the audited path is 2–4× slower than the
+producer's fast-path serving. At p=3% sampling, this is +6% network compute
+overhead. Borne by producers, not consumers.
+
+**Reference kernel library** specified as `ants-canonical-kernels` (Rust,
+hand-tuned SIMD per platform). Skeleton given; implementation is real work
+— estimated 6–12 months for the CPU canonical path alone, with GPU
+acceleration following per-platform. Until it exists, "canonical numerics"
+is words; we say so in the RFC.
+
+Marked **Draft v0.1 (early)** because the recipe will be revised when the
+reference kernel library exists and b2 measures its honest-noise floor.
+Substantial open questions are listed honestly (MoE routing, speculative
+decoding, KV-cache audits, Apple Silicon achievability, closed-weight
+models, verifiability-tax economics).
+
+### Why both, why now
+
+Implementation cannot start with byte-level ambiguity, and it cannot start
+without a canonical numerics specification. Adding these now means: when the
+first engineer opens an editor to write the reference client, every
+primitive choice is pinned and the audited-path recipe is at least
+provisionally specified. Six months of "we'll figure it out as we go"
+become six months of writing code against a spec — different problems,
+different costs, much better outcome.
+
+The two RFCs together close BLOCK B1 (canonical numerics) and B3
+(attestation wrapper format choices, via §1.1 CBOR + §3.4 key hierarchy),
+and all the GAP items from the criticality review (PRF, hash, signature,
+encoding, NCS encoding, test-vector format). The remaining BLOCK items —
+B2 bond accounting model, B4 bootstrap sequence, B5 embedding model
+versioning governance, B6 fork-recovery bond circularity — are smaller
+and addressed via amendments to the existing design RFCs.
+
+A fresh corpus-wide criticality re-check is the natural next step after
+these land — to surface incompatibilities that the new primitives may
+have introduced between what the design RFCs *assume* and what the
+references *actually specify*.
+
+---

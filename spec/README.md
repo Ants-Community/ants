@@ -13,12 +13,15 @@ The protocol is structured as a stack of layers. Reading order matches dependenc
 | [RFC-0005](./RFC-0005-identity.md) | Identity — hardware attestation, multi-vendor TEE, Sybil economics | Draft v0.1 (early) | — |
 | [RFC-0006](./RFC-0006-payment-terms.md) | Payment Terms & Economic Pluralism — how multiple economies coexist | Draft v0.1 (early) | RFC-0001 |
 | RFC-0007 | Post-v1.0 Governance — TSC mechanics, transition from BDFL | Planned | [GOVERNANCE.md](../GOVERNANCE.md) |
+| [RFC-0008](./RFC-0008-wire-formats.md) | Wire Formats, Crypto Primitives, Reference Constants — the implementation glue | Reference v0.1 | — |
+| [RFC-0009](./RFC-0009-canonical-numerics.md) | Canonical Numerics for Verifiable Inference — INT8-GPTQ default, FP16 fallback | Draft v0.1 (early) | RFC-0003, RFC-0008 |
 
 ## Status legend
 
 - **Draft** — the RFC is technically complete enough to be implemented experimentally; specifics may still change.
 - **Draft (early)** — the RFC defines the design intent and the major open questions; specifics are explicitly under-specified and expected to be revised after testnet experience.
 - **Planned** — the RFC has a designated number and topic; the document has not yet been drafted.
+- **Reference** — a living-standard technical specification that is prescriptive rather than exploratory; versioned independently from the design RFCs and updated when a primitive must change.
 
 ## Reading order
 
