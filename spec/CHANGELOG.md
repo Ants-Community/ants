@@ -885,6 +885,89 @@ acknowledged as irreducible or testnet-dependent.
 
 ---
 
+## RFC-0008 · v0.2 → v0.3 + RFC-0010 · v0.1 → v0.2 · 2026-05-20 · ECVRF constant-time + in-protocol trustee key rotation
+
+Closes the two Round-2 residuals left out of the `93ef697` corpus: the
+timing side-channel in the pinned VRF ciphersuite (RFC-0008), and the
+trustee-key-rotation operational gap that GenesisState immutability
+created (RFC-0010).
+
+### RFC-0008 — ECVRF ciphersuite TAI → ELL2
+
+**Was:** §4.2 pinned `ECVRF-EDWARDS25519-SHA512-TAI`. The
+try-and-increment hash-to-curve iterates with a counter until a valid
+curve point is found; the iteration count depends on the input. On
+hardware with cache or branch-prediction side-channels, this leaks
+information about the VRF input through the wall-clock timing of
+`prove`/`verify`.
+
+**Now:** §4.2 pins `ECVRF-EDWARDS25519-SHA512-ELL2`. The Elligator 2
+hash-to-curve maps any field element to a curve point in a single
+constant-time operation. Output distribution and verifiability are
+identical to TAI; only the timing channel closes. Both ciphersuites
+are documented in [RFC 9381](https://www.rfc-editor.org/rfc/rfc9381).
+
+**Why:** the VRF inputs (previous-block-hash, height, drand round) are
+themselves public, so the practical leak is bounded — but pinning a
+primitive whose constant-time variant is freely available and equally
+interoperable would have been gratuitous. The change is pre-v1.0 and
+costs nothing on the wire. The pinning §9 framing for "breaking change
+to pinned primitive = major version bump" applies post-v1.0; during
+v0.x, primitive corrections of this kind are allowed and travel as
+ordinary `vN.x → vN.(x+1)` amendments.
+
+### RFC-0010 — Trustee key rotation in-protocol
+
+**Was:** §"What we have not figured out yet" explicitly listed trustee
+key rotation as undefined: "the GenesisState is supposed to be
+immutable, so trustee key rotation effectively requires a
+protocol-version bump." This left a realistic 6–12 month bootstrap
+event — hardware replacement, attestation refresh, key compromise,
+planned departure — without an in-protocol path.
+
+**Now:** new §Trustee key rotation specifies an in-protocol mechanism
+that does **not** require a protocol-version bump. Pieces:
+
+- **Slot/key separation**: the GenesisState `trustees[]` array fixes
+  trustee *slot* identity; the *key* bound to each slot is mutable.
+  Granted-weight schedule remains anchored to slot creation time, so
+  rotation cannot reset the sunset curve.
+- **KeyRotationAnnouncement**: signed by the outgoing key + 2/3 of
+  *other* current trustees as witness acks, carrying a fresh TEE
+  attestation for the new key, propagated through L1 alongside fault
+  proofs. Two new context strings (`ants-v1-trustee-rotation`,
+  `ants-v1-trustee-rotation-ack`) added to RFC-0008 §4.1.
+- **Forced rotation / revocation**: lost-key and compromise cases that
+  cannot self-sign use `TrusteeRevocation` (same envelope, `prev_sig`
+  omitted) requiring full 2/3 witness threshold, with the new key
+  optional (slot may be left vacant).
+- **Equivocation handling**: two conflicting announcements at the same
+  slot/epoch produce self-authenticating fault; the slot freezes until
+  a witness-quorum revocation resolves it.
+- **New calibratable constant**: `ROTATION_ADMISSION_WINDOW` (default
+  7 epochs ≈ 1 week) added to RFC-0008 §7.
+
+**Why:** the immutability of GenesisState was load-bearing for *protocol
+identity* (genesis hash, embedding model pinning, drand network), not
+for the operational fact of which keys are currently bound to each
+trustee slot. The mechanism makes that distinction precise and reuses
+existing primitives (L1 CRDT, BLS, TEE attestation) — no new
+cryptographic assumption. The compromise scenario reduces to the same
+honest-majority assumption RFC-0004's L2 finality already makes; a
+coordinated >1/3 trustee compromise hands off to the credible-fork-threat
+as everywhere else.
+
+### State after this amendment
+
+The two Round-2 residuals flagged in the `93ef697` post-mortem are
+closed. The remaining post-multi-persona-review items are the Round 3
+EDGE-tier register corrections (open-hardware TEE timeline, q24
+birthday-attack quantification, producer royalty 50→60-70%, CoC
+moderators not BDFL-only, TEE price erosion in Sybil economics) and
+the testnet-empirical b2-class measurements.
+
+---
+
 ## Round 2 — RFC-0011 added + IMPLEMENTATION.md added + RFC-0007 promoted · 2026-05-20
 
 Closes the three HARD items remaining after Round 1: the formal model

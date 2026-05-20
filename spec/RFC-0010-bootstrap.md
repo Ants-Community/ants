@@ -1,6 +1,6 @@
 # RFC-0010 — Bootstrap Sequence
 
-**Status:** Draft · v0.1
+**Status:** Draft · v0.2
 **Topic:** What the first peer does when it runs the reference client, and how the network evolves from one attested peer to a self-secured colony.
 **Audience:** You, if you are about to implement the bootstrap of the reference client.
 **Depends on:** [GOVERNANCE.md](../GOVERNANCE.md), [RFC-0001](./RFC-0001-community-economy.md), [RFC-0002](./RFC-0002-semantic-cache.md), [RFC-0003](./RFC-0003-verification.md), [RFC-0004](./RFC-0004-reputation-pouh.md), [RFC-0005](./RFC-0005-identity.md), [RFC-0008](./RFC-0008-wire-formats.md), [RFC-0009](./RFC-0009-canonical-numerics.md)
@@ -355,6 +355,155 @@ not aspirational; it is the recipe.
 
 ---
 
+## Trustee key rotation
+
+A trustee will need to rotate keys at least once during the bootstrap
+window: hardware lost or upgraded, TEE attestation re-issued after a
+vendor firmware update, suspected key compromise, or planned departure
+with a successor designated. The GenesisState is signed once and never
+amended in-protocol (per §Genesis state above), so naïvely a key change
+would require a protocol-version bump and a coordinated migration —
+operationally absurd as a response to a single hardware swap.
+
+This section (added in v0.2) specifies an in-protocol key-rotation
+mechanism that does **not** require a protocol-version bump. The
+mechanism reuses primitives that already exist (L1 CRDT, BLS aggregate
+signatures, TEE attestation) and adds no new ones.
+
+### Trustee slot vs trustee key
+
+The GenesisState `trustees[]` array fixes the **trustee slot**
+identity: slot `i` is whoever the i-th array entry pointed to at
+genesis. The slot is stable for the life of the protocol; the **key**
+bound to that slot may rotate.
+
+A peer's view of the current trustee set is computed by replaying all
+finalised key-rotation announcements (defined below) against the
+GenesisState. The result is a slot-indexed mapping
+`slot_index → (current_peer_id, current_bls_pubkey, current_attestation)`
+that every honest peer computes identically from the same inputs.
+
+The granted-weight schedule `G(0)·e^{-δ_genesis · t}` is anchored to
+**slot creation time** (genesis launch_timestamp), not to the current
+key's age. Key rotation does not reset the sunset curve. A trustee
+cannot earn fresh genesis weight by rotating; the slot decays on its
+original schedule regardless.
+
+### Key-rotation announcement
+
+A trustee rotates keys by publishing a CBOR-encoded
+`KeyRotationAnnouncement` to L1, structured as:
+
+```
+KeyRotationAnnouncement {
+  slot_index:        u8,                       // index into GenesisState.trustees
+  prev_peer_id:      Ed25519 pubkey,           // outgoing key (must match current slot binding)
+  new_peer_id:       Ed25519 pubkey,
+  new_bls_pubkey:    BLS12-381 G1 pubkey,      // derived per RFC-0008 §3.4
+  new_attestation:   opaque vendor blob,       // fresh TEE attestation binding new_peer_id to hardware
+  reason_code:       enum { HW_REPLACEMENT,
+                            ATTESTATION_REFRESH,
+                            SUSPECTED_COMPROMISE,
+                            PLANNED_DEPARTURE,
+                            OTHER },
+  epoch:             u64,                      // L2 epoch at which announcement is filed
+  nonce:             32-byte random,
+  prev_sig:          Ed25519 signature over BLAKE3.derive_key(
+                       "ants-v1-trustee-rotation", canonical-CBOR of preceding fields)
+                     using the prev_peer_id key,
+  witness_acks:      [ { acker_slot: u8, sig: Ed25519 }, ... ]
+}
+```
+
+The new context string `"ants-v1-trustee-rotation"` is added to
+RFC-0008 §4.1's reserved-context table.
+
+The announcement is propagated through L1 alongside fault proofs (same
+CRDT mechanism, different message type) and is **self-authenticating**
+in the same sense: any peer can verify it independently against the
+public state.
+
+### Admission rules
+
+An announcement is **admitted** (slot binding updated network-wide) when
+**all** of the following hold:
+
+1. **Authenticity.** `prev_sig` verifies under `prev_peer_id`, and
+   `prev_peer_id` matches the current binding of `slot_index` from
+   the network's replay of prior announcements (or the GenesisState
+   entry if no prior rotation).
+2. **Attestation.** `new_attestation` is a fresh, valid TEE
+   attestation per RFC-0005, binding `new_peer_id` to attested
+   hardware. Stale attestations are rejected.
+3. **Witness threshold.** `witness_acks` contains valid Ed25519
+   signatures from at least `⌈2/3 · (T − 1)⌉` of the **other** current
+   trustees (T = total current trustees; the rotating slot does not
+   count toward its own quorum). Each ack signs
+   `BLAKE3.derive_key("ants-v1-trustee-rotation-ack",
+   canonical-CBOR of the rotation announcement without witness_acks)`
+   under the acker's current peer_id.
+4. **Epoch freshness.** The L2 chain has reached `epoch` and not
+   advanced beyond `epoch + ROTATION_ADMISSION_WINDOW` (default: 7
+   epochs, calibratable). Announcements outside this window are
+   rejected as stale or premature — the same anti-replay discipline
+   bond admission uses.
+
+The 2/3-of-other-trustees threshold mirrors RFC-0004's L2 finality:
+rotation is a coordination object across the trustee set, so the same
+fault-tolerance bound applies.
+
+### Compromise path
+
+If `prev_peer_id` is compromised, the attacker can produce a valid
+`prev_sig` over an announcement that rotates the slot to a key the
+attacker controls. The witness-ack requirement is what prevents this:
+the attacker also needs ⌈2/3 · (T − 1)⌉ honest trustees to
+countersign, which they will not do without out-of-band confirmation.
+The compromise reduces to the same honest-majority assumption RFC-0004
+makes for L2 finality — no weaker, no stronger.
+
+**Forced rotation without `prev_sig`** (the lost-key case): when a
+trustee has lost access to `prev_peer_id` entirely, they cannot
+self-rotate. Instead, the remaining trustees publish a
+`TrusteeRevocation` (same envelope as KeyRotationAnnouncement but with
+`prev_sig` omitted and `reason_code: SUSPECTED_COMPROMISE` or
+`PLANNED_DEPARTURE`). Admission requires the **full** witness
+threshold `⌈2/3 · (T − 1)⌉` plus an explicit `new_peer_id` field that
+may equal `null` (slot left vacant) or a designated successor. A
+revocation without successor reduces T by one; subsequent admission
+thresholds recompute. This path is the in-protocol equivalent of a
+governance action and is reserved for compromise or departure cases —
+the witnesses must publish a brief signed justification alongside,
+which lives in the L1 record.
+
+### Equivocation
+
+A trustee that signs **two different** key-rotation announcements at
+the same `slot_index` and `epoch` is committing self-authenticating
+equivocation (the two `prev_sig` values are the proof). The L1 fault
+mechanism applies: the rotating slot is **frozen** — current binding
+stays in force, no further rotation by `prev_peer_id` is admitted —
+until a `TrusteeRevocation` with full witness threshold resolves the
+slot to a clean successor or vacancy. The slot's granted weight
+continues decaying on schedule during the freeze.
+
+### What this does not address
+
+The mechanism handles individual trustee key changes. A coordinated
+compromise of more than ⌈1/3 · T⌉ trustees defeats the witness
+threshold — the same honest-majority assumption the rest of the
+architecture rests on. That residual handoff is, again, the
+credible-fork-threat.
+
+The mechanism also assumes the L1 CRDT is functioning. During a
+partition that isolates a rotating trustee, the announcement may
+propagate on only one side; the §Partition recovery mechanism of
+RFC-0004 v0.5 (Σ-T fork choice) reconciles after partition heal — the
+fork with the witnessed announcement wins because the witnesses'
+combined tenure is the larger Σ-T.
+
+---
+
 ## What we have not figured out yet
 
 - **Exact `δ_genesis` calibration.** The sunset curve's decay rate
@@ -368,12 +517,6 @@ not aspirational; it is the recipe.
   protocol relies on existing peers to gossip up-to-date DHT seed lists,
   but no mechanism is specified for clients to update their embedded
   bootstrap list. Open.
-- **Trustee key rotation during bootstrap.** A trustee may need to
-  rotate keys (compromise, departure). Currently undefined; the
-  GenesisState is supposed to be immutable, so trustee key rotation
-  effectively requires a protocol-version bump. Whether to allow
-  in-protocol trustee key rotation via L1 attributable-fault-style
-  signed announcements is open.
 - **Cold-start for late joiners.** A peer joining at `t = 1 year` must
   download `1 year × 30s` worth of L2 blocks = ~1M blocks. Block
   pruning policy is mentioned in RFC-0004 but not specified. State
@@ -383,6 +526,11 @@ not aspirational; it is the recipe.
   drand or the standard bootstrap seeds. Mitigation: rely on alternative
   network paths (Tor, I2P) — but the protocol does not currently specify
   these and they have their own dependencies.
+- **`ROTATION_ADMISSION_WINDOW` calibration.** The default 7-epoch
+  window (≈ 1 week given EPOCH_DURATION = 24h per RFC-0008 §7) trades
+  off witness-ack collection time vs replay resistance. Tightening it
+  stresses the coordination path; loosening it widens the equivocation
+  window. Calibratable, b2-class.
 
 ---
 

@@ -1,6 +1,6 @@
 # RFC-0008 — Wire Formats, Crypto Primitives, and Reference Constants
 
-**Status:** Reference · v0.2 (living standard)
+**Status:** Reference · v0.3 (living standard)
 **Topic:** The concrete byte-level choices the protocol makes once and refers to from everywhere else.
 **Audience:** You, if you are about to write code.
 **Depends on:** all design RFCs (this document is the implementation glue between them).
@@ -220,22 +220,39 @@ This document reserves the following context strings:
 | `"ants-v1-logit-trace-root"` | root commitment over the full logit trace | RFC-0003 §commit-at-send |
 | `"ants-v1-cache-entry-hash"` | content addressing of `Y_canon` in cache entries | RFC-0002 §"What the response field contains" |
 | `"ants-v1-vrf-seed-degraded"` | fallback VRF seed when drand is unavailable | §4.2 below |
+| `"ants-v1-trustee-rotation"` | binding for trustee key-rotation announcement | RFC-0010 §Trustee key rotation |
+| `"ants-v1-trustee-rotation-ack"` | binding for trustee key-rotation witness ack | RFC-0010 §Trustee key rotation |
 
 New contexts are added to this table via amendment to this RFC, never
 hard-coded ad-hoc. The domain-separation discipline is non-negotiable: re-using
 a derived key across contexts is the single most common cause of subtle
 cryptographic bugs in deployed systems.
 
-### 4.2 · VRF for committee selection: ECVRF-EDWARDS25519-SHA512-TAI
+### 4.2 · VRF for committee selection: ECVRF-EDWARDS25519-SHA512-ELL2
 
 Committee selection for the L2 PoUH chain (RFC-0004 §Layer 2) uses a
 **Verifiable Random Function** per [IETF RFC 9381](https://www.rfc-editor.org/rfc/rfc9381),
-specifically the ciphersuite **ECVRF-EDWARDS25519-SHA512-TAI** ("try-and-increment").
+specifically the ciphersuite **ECVRF-EDWARDS25519-SHA512-ELL2** (Elligator 2
+hash-to-curve).
 
 The chain header's previous-block-hash plus block height plus an external
 entropy beacon contribution feeds the VRF input. The VRF output is verifiable
 by anyone with the proposer's public key: anyone can confirm that the correct
 committee was selected from the attested peer population, deterministically.
+
+**Why ELL2 and not TAI (added in v0.3).** RFC 9381 documents two
+hash-to-curve constructions for the EDWARDS25519-SHA512 family:
+**TAI** (try-and-increment) iterates with a counter until a hash falls on
+the curve — the iteration count depends on the input, so the wall-clock
+time of `ECVRF_prove` and `ECVRF_verify` is input-dependent and leaks
+information through cache and branch-prediction side-channels. **ELL2**
+(Elligator 2) maps any field element to a curve point in a single
+constant-time operation. The output distribution and verifiability are
+identical; the only difference is timing. Because the protocol's VRF
+inputs (previous-block-hash, height, drand round) are public, the
+practical leak is bounded, but pinning a primitive whose constant-time
+variant is freely available and equally interoperable would have been
+gratuitous. We pin ELL2.
 
 External entropy: the protocol uses **drand** (League of Entropy beacon) as its
 public unbiasable randomness source for VRF seed contribution. Each block's
@@ -375,6 +392,7 @@ changes within a major version are permitted.
 | `BOND_RISK_MULT_SETTLEMENT` | RFC-0004 v0.3 §Bonds | TBD on b2 (multiplier on settlement value) | C |
 | `BLS_TRANSITION_K` | §3.3 above | 16 (Ed25519 ≤ K, BLS > K) | C |
 | `DRAND_TIMEOUT` | §4.3 above | 30 seconds | C |
+| `ROTATION_ADMISSION_WINDOW` | RFC-0010 §Trustee key rotation | 7 epochs (≈ 1 week) | C |
 | `POUH_COMMITTEE_SIZE_K` | RFC-0004 | 64 | C (bootstrap-scales) |
 | `POUH_BLOCK_TIME` | RFC-0004 | 30 seconds | C |
 | `POUH_FINALITY_THRESHOLD` | RFC-0004 | ⌈2K/3⌉ | P |
