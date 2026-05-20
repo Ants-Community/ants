@@ -885,6 +885,128 @@ acknowledged as irreducible or testnet-dependent.
 
 ---
 
+## Round 5 — Language alignment: reference client in C · 2026-05-20
+
+A foundational decision on the reference-client implementation language,
+recorded here because it touches two spec documents (RFC-0009 and
+IMPLEMENTATION.md) and is large enough to warrant a CHANGELOG entry of
+its own, but small enough not to be a full review round.
+
+### The decision
+
+The reference client is implemented in **C (C99/C11)**, not Rust. The
+choice was made on the basis of two priorities the founder articulated
+when the conversation pivoted from spec to code: **maximum performance**
+on the audited path, and **total cross-platform reach** (every server,
+every Apple Silicon, every Android NDK target, every embedded ARM chip
+with a TEE — *la rete deve essere pura*).
+
+### What the choice gains
+
+- **Performance at the metal.** SIMD intrinsics, memory layout control,
+  cache-line awareness — C is the default tooling for all three, with 30
+  years of compiler maturity. The canonical kernels (component #12) sit
+  directly on `ggml` (which is C, and is the state-of-the-art for
+  quantized inference on commodity CPUs in 2026).
+- **Total platform reach.** Every TEE SDK (Intel SGX/TDX, AMD SEV-SNP,
+  ARM CCA, Apple Secure Enclave, Qualcomm QSEE) is C/C++ native — no
+  binding work for the largest foundation component (#3 TEE harness,
+  6 EM). C compilers exist on every chip that matters, including
+  embedded targets (Cortex-M, RISC-V) the protocol may want to support
+  later.
+- **ABI stability and audit-friendliness.** C ABI has been stable for
+  decades; the entire ecosystem can link against C libraries across
+  compiler versions. Every line of C does one thing — no hidden
+  destructors, no template expansion, no constructor side effects.
+  Audits of crypto and consensus code are easier on C than on languages
+  with richer semantics. Bitcoin Core's mixed C/C++ codebase is the
+  closest operational precedent; `ggml` and `secp256k1` are the pure-C
+  precedents that demonstrate the approach scales.
+- **No FFI boundary.** Crypto (BLAKE3, `blst`, `ed25519-donna`),
+  inference (`ggml`), CBOR (`tinycbor`/`nanocbor`), TEE SDKs — all C
+  native. The reference client links directly without wrapper layers.
+
+### What the choice costs (named honestly)
+
+- **No compile-time memory safety.** Use-after-free, buffer overflow,
+  data race classes that Rust would catch at compile time are runtime
+  concerns in C. Mitigation strategy: discipline (defer/cleanup macros,
+  arena allocators for hot paths), static analysis with Clang
+  `-Weverything`, AddressSanitizer + ThreadSanitizer + UBSan in CI,
+  fuzzing via libFuzzer/AFL++ on every protocol-parser surface,
+  external security audit at Phase F (per IMPLEMENTATION.md). Manifesto
+  Thesis 18's "We Acknowledge" register applies here as well: the
+  trade-off is accepted, not hidden.
+- **More code written by hand.** No `std::vector`, no `std::map`, no
+  RAII. Realistic increase: ~30–50% more lines of code vs C++17, much
+  of which is cleanup/error-handling discipline. Every line is
+  obvious; the audit benefit compensates.
+- **No `cargo`-style unified tooling.** Build is **CMake superbuild**
+  (cross-platform) or pure Make + autoconf (purist). Dependency
+  management is per-platform package managers (apt, brew, vcpkg) or
+  vendored sources (`deps/ggml/`, etc.). The friction is real but
+  manageable; the entire C ecosystem has done it for decades.
+
+### What changed in this entry
+
+- **RFC-0009 v0.4 → v0.5** (early). §"The recipe is not implemented
+  yet" updated: kernel library is in C99/C11 with hand-tuned SIMD
+  intrinsics + assembly, expected to leverage `ggml` as computational
+  foundation, with the discipline layer (left-biased tree reductions,
+  divide-not-reciprocal scale arithmetic, q24, INT8-GPTQ-128) above
+  it. §"The reference kernel library" skeleton rewritten as a C
+  library structure (`.c`/`.h` files, `CMakeLists.txt`, `deps/ggml/`
+  vendoring/submodule, `cpu_scalar.c` as bit-exact reference).
+- **IMPLEMENTATION.md** new §"Language and stack" section between
+  §"Why this document exists" and §"The fifteen sub-components".
+  Documents the C choice, names the reference library baselines for
+  each layer (`ggml`, BLAKE3, `blst`, `ed25519-donna`, ECVRF-ELL2,
+  `tinycbor`/`nanocbor`, TEE SDKs, CMake), and records the repo
+  layout (`ants-client` + `ants-test-vectors` sibling repos to
+  `ants` spec repo) and licence choice (Apache-2.0 OR MIT
+  dual-licence) per the Round 5 decisions.
+- **IMPLEMENTATION.md component table** descriptors updated to
+  reflect C choice: #1 crypto primitives mentions specific C
+  libraries; #2 CBOR codec names `tinycbor`/`nanocbor` candidates;
+  #3 TEE harness notes "all C/C++ native, no binding work"; #12
+  canonical kernel library explicitly says "C library, leverages
+  `ggml` as computational foundation."
+
+### What did not change
+
+- **No protocol behaviour changes.** No constant moved. No security
+  argument was strengthened or weakened. The corpus continues to
+  specify *what* the protocol does and *why*; the language is a *how*
+  decision and lives in IMPLEMENTATION.md plus the kernel-library
+  skeleton.
+- **No new RFC version bumps except RFC-0009.** RFC-0008's
+  language-agnostic primitives spec is unchanged. The reference
+  client could be reimplemented in any other systems language and
+  still conform — the bytes on the wire are the spec, not the
+  source.
+- **No effort estimate changes.** 72–92 EM remains the figure;
+  IMPLEMENTATION.md's 24–36-month wall-clock figure is unaffected.
+  C is comparable to Rust in raw effort once the binding work for
+  TEE SDKs and ML libraries is accounted for (Rust would have saved
+  on memory-safety review but spent on FFI).
+
+### State after Round 5
+
+The corpus is implementation-language-aligned. Next operational step
+per the founder's decision is creating `Ants-Community/ants-client`
+and `Ants-Community/ants-test-vectors` repositories with the agreed
+licence and CMake scaffolding, then opening `[CLAIM]` issues on
+`Ants-Community/ants` for the foundation-layer components (#1
+crypto primitives, #2 CBOR codec, #3 TEE harness). Code starts
+after the nomination window per IMPLEMENTATION.md §"How to claim a
+sub-component."
+
+The spec corpus remains review-cycle-complete from both
+multi-persona reviews. This entry records a decision about *how*
+to build, not *what* to build.
+
+---
+
 ## Round 4 EDGE — register corrections from multi-persona Round 2 review · 2026-05-20
 
 Twelve register-level corrections from the Round 2 multi-persona review.

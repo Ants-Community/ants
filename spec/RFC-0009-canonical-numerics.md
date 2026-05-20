@@ -1,6 +1,6 @@
 # RFC-0009 — Canonical Numerics for Verifiable Inference
 
-**Status:** Draft · v0.4 (early — substantial revision expected once the reference kernel library exists and the b2 testnet measures its honest-noise floor)
+**Status:** Draft · v0.5 (early — substantial revision expected once the reference kernel library exists and the b2 testnet measures its honest-noise floor)
 **Topic:** The numerical recipe that two honest peers, on different hardware, must agree on bit-for-bit when committing to verifiable inference.
 **Audience:** You, if you have ever stared at two correct-looking GPU implementations producing slightly different logits and wanted to scream.
 **Depends on:** [RFC-0003](./RFC-0003-verification.md), [RFC-0008](./RFC-0008-wire-formats.md)
@@ -334,14 +334,32 @@ Honest caveats, in order of severity:
 
 ### The recipe is not implemented yet
 
-The reference kernel library — call it `ants-canonical-kernels`, to be
-written in Rust with hand-tuned SIMD (AVX2/AVX-512 for x86, NEON for ARM,
-Metal Performance Shaders shim for Apple Silicon, ROCm shim for AMD, CUDA
-shim for NVIDIA) — does not exist. It is the second-largest piece of
-implementation work in the corpus (after the all-in-one reference client),
-estimated 6–12 months for 1–2 engineers full-time.
+The reference kernel library — call it `ants-canonical-kernels`, written
+in **C99/C11** with hand-tuned SIMD intrinsics + assembly (AVX2/AVX-512
+for x86, NEON/SVE for ARM, scalar fallback for portability) — does not
+exist. It is the second-largest piece of implementation work in the
+corpus (after the all-in-one reference client), estimated 6–12 months
+for 1–2 engineers full-time.
 
-Until it exists, "canonical numerics" is words. We say so.
+The library is expected to leverage **`ggml`** as its computational
+foundation. `ggml` (the C library underlying `llama.cpp`) already
+provides production-grade quantized inference primitives in C across
+every platform the protocol targets — x86, ARM server, Apple Silicon,
+Android NDK, embedded. The protocol-specific work in
+`ants-canonical-kernels` is the *discipline layer* on top: the
+canonical-recipe pinning specified in §§ 1–5 above (left-biased tree
+reductions, divide-not-reciprocal scale arithmetic, integer-domain
+accumulation order, q24 representation, INT8-GPTQ-128 quantization
+schema). Whether to fork `ggml` or to embed it as a dependency with
+the discipline layer above is an implementation choice, not a
+specification one.
+
+GPU canonical kernels (CUDA, ROCm, Metal Performance Shaders) are
+explicit v0.2+ deliverables per IMPLEMENTATION.md and add 6–18 EM each
+per platform. v0.1 ships with CPU-only canonical, acceptable for the
+initial testnet.
+
+Until the library exists, "canonical numerics" is words. We say so.
 
 ### Not every model has a validated INT8-GPTQ-128 quantization
 
@@ -403,37 +421,69 @@ TEE-confidential modes.
 
 ## The reference kernel library
 
-The specification of the kernel library, in skeleton form:
+The specification of the kernel library, in skeleton form. The
+reference client is in **C** (the network's implementation language,
+chosen for performance, total cross-platform reach, audit-friendliness,
+and ABI stability). The library follows the `ggml` precedent for
+file/symbol layout — flat C headers + per-platform implementation
+units, no abstraction layers between caller and the metal.
 
 ```
-ants-canonical-kernels (a Rust crate)
+ants-canonical-kernels/  (a C library)
+│
+├── include/
+│   ├── ants_canon.h            // public API: ants_canon_matmul_i8(),
+│   │                           //   ants_canon_attention(),
+│   │                           //   ants_canon_quantize_*(),
+│   │                           //   ants_canon_q24_*()
+│   └── ants_canon_internal.h   // internal helpers, not part of ABI
 │
 ├── matmul/
-│   ├── int8_int8_int32.rs      // INT8 × INT8 → INT32 GEMM
-│   ├── fp32_unembed.rs         // FP32 unembedding (canonical reduction)
+│   ├── int8_int8_int32.c       // INT8 × INT8 → INT32 GEMM, canonical order
+│   ├── fp32_unembed.c          // FP32 unembedding, canonical reduction tree
 │   └── tests/                  // bit-exact test vectors against q24 outputs
 │
 ├── attention/
-│   ├── canonical.rs            // softmax + matmul, fixed reduction order
+│   ├── canonical.c             // softmax + matmul, fixed reduction order
 │   └── tests/
 │
 ├── quantize/
-│   ├── gptq_per_channel.rs     // GPTQ INT8 quantization from FP16 weights
-│   ├── awq_per_group.rs        // AWQ fallback
-│   ├── activation_dynamic.rs   // per-token symmetric INT8 activations
+│   ├── gptq_per_channel.c      // GPTQ INT8 quantization from FP16 weights
+│   ├── awq_per_group.c         // AWQ fallback
+│   ├── activation_dynamic.c    // per-token symmetric INT8 activations
+│   │                           //   (with §2.1 bit-exact scale recipe)
 │   └── tests/
 │
 ├── fixed_point/
-│   ├── q24.rs                  // FP32 ↔ q24 conversion, deterministic
+│   ├── q24.c                   // FP32 ↔ q24 conversion, deterministic
 │   └── tests/
 │
-└── platforms/
-    ├── x86_avx2.rs             // AVX2 SIMD implementations
-    ├── x86_avx512.rs           // AVX-512 SIMD
-    ├── arm_neon.rs             // NEON SIMD
-    ├── cpu_scalar.rs           // pure scalar fallback (slow but reproducible)
-    └── README.md               // GPU platform shim status
+├── platforms/
+│   ├── x86_avx2.c              // AVX2 SIMD intrinsics
+│   ├── x86_avx512.c            // AVX-512 SIMD intrinsics
+│   ├── arm_neon.c              // NEON SIMD intrinsics
+│   ├── arm_sve.c               // SVE intrinsics (ARM v9+ servers)
+│   ├── cpu_scalar.c            // pure scalar fallback (slow but reproducible,
+│   │                           //   serves as bit-exact reference)
+│   └── README.md               // GPU platform shim status (v0.2+ deliverable)
+│
+├── deps/
+│   └── ggml/                   // ggml source (vendored or git-submodule),
+│                               //   provides quantized inference primitives
+│                               //   that ants-canonical-kernels disciplines
+│                               //   per §§ 1-5 above
+│
+└── CMakeLists.txt              // CMake superbuild; produces libants_canon.a
+                                //   plus per-platform test binaries
 ```
+
+The `cpu_scalar.c` path is the **bit-exact reference**: a pure scalar
+implementation that uses no SIMD intrinsics, no parallelism, no
+vendor-specific tricks. It is the slowest path and the canonical
+ground truth. Every other platform-specific implementation must
+produce byte-identical output against `cpu_scalar.c` for every test
+vector, on every supported architecture. SIMD implementations are
+*optimisations* on the scalar reference, not redefinitions of it.
 
 GPU platform support is *aspirational* in v0.1. The pragmatic v1.0 target is:
 - **CPU canonical implementation works on all reference platforms.** This is

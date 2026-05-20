@@ -36,6 +36,63 @@ months with 4–6 engineers**.
 
 ---
 
+## Language and stack
+
+The reference client is implemented in **C (C99/C11)**. The choice
+reflects the project's two operational priorities: maximum performance
+on the audited path, and total cross-platform reach (every server,
+every Apple Silicon, every Android NDK target, every embedded ARM
+chip with a TEE). C is the language that ships on every platform that
+matters, has the most mature crypto and ML library ecosystem, has the
+most stable ABI of any compiled language, and is the most
+audit-friendly because every line does one thing.
+
+The trade-off accepted: no compile-time memory-safety guarantee.
+Mitigation through discipline (defer/cleanup macros, arena allocators
+for hot paths, static analysis with Clang's `-Weverything`, fuzzing
+via libFuzzer/AFL++, ThreadSanitizer + AddressSanitizer in CI). The
+manifesto's Thesis 18 acknowledgment of hardware-vendor trust extends
+to a comparable register here: we accept the memory-safety cost as
+the price of running on every platform at full speed.
+
+**Reference library baselines** (subject to revision; these are the
+production-grade C codebases the reference client is expected to
+link against or fork):
+
+| Layer | Library |
+|---|---|
+| Inference primitives | [`ggml`](https://github.com/ggerganov/ggml) — quantized inference in C, foundation underlying `llama.cpp` |
+| BLAKE3 | [`BLAKE3-team/BLAKE3`](https://github.com/BLAKE3-team/BLAKE3) C reference implementation |
+| Ed25519 | `ed25519-donna` or a formally-verified C implementation |
+| BLS12-381 | [`supranational/blst`](https://github.com/supranational/blst) — C + asm, fastest BLS implementation |
+| ECVRF (ELL2) | Forked from [`RFC 9381`](https://www.rfc-editor.org/rfc/rfc9381) reference + Elligator 2 C port |
+| CBOR | [`tinycbor`](https://github.com/intel/tinycbor) or [`nanocbor`](https://github.com/bergzand/NanoCBOR) — both audited for RFC 8949 §4.2.1 deterministic encoding |
+| P2P transport | open question: custom C minimal stack, [`libp2p-c`](https://github.com/libp2p/cpp-libp2p) (C++ binding usable from C), or external daemon via IPC |
+| TEE SDK | Intel SGX/TDX SDK, AMD SEV-SNP SDK, ARM CCA reference, Apple SE Objective-C bridge, Qualcomm QSEE — all C/C++ native, no binding work |
+| Build system | CMake (cross-platform superbuild) or pure Make + autoconf |
+
+**Repo layout** (per the language-alignment decision, Round 5):
+- [`Ants-Community/ants`](https://github.com/Ants-Community/ants) —
+  this repo, holds the spec, governance, manifesto, and
+  CHANGELOG. No client code.
+- `Ants-Community/ants-client` (new, to be created) — CMake
+  superbuild of the reference client. One subdir per component
+  group (foundation/, network/, reputation/, cache/, inference/,
+  economy/). Each component is a static library, all linked into
+  the all-in-one client binary.
+- `Ants-Community/ants-test-vectors` (new, to be created) —
+  versioned test-vector pack per RFC-0008 §8, grows alongside the
+  reference client.
+
+**Licence** for the code (per Round 5 decision): **Apache-2.0 OR
+MIT** dual-licence. The Apache-2.0 patent grant is non-negotiable
+for a crypto/TEE-touching system; the MIT alternative maximises
+permissiveness for downstream forks. CC0 was considered (for
+manifesto consistency) but rejected because it provides no patent
+grant, which is the wrong trade for the code layer specifically.
+
+---
+
 ## The fifteen sub-components
 
 Grouped into six layers by architectural concern. Effort estimates are
@@ -49,9 +106,9 @@ one.
 
 | # | Component | Spec | Effort | Notes |
 |---|---|---|---|---|
-| 1 | Crypto primitives library | RFC-0008 §2–4 | 2 EM | BLAKE3, Ed25519, BLS12-381, ECVRF. Mature libraries exist; the work is wrapping + test-vector conformance. |
-| 2 | CBOR canonical codec | RFC-0008 §1.1 | 1 EM | Deterministic encoding per RFC 8949 §4.2.1. Most existing libraries are non-conformant; expect to write or audit a codec. |
-| 3 | TEE attestation harness | RFC-0005 | 6 EM | Five vendor families (Intel TDX, AMD SEV-SNP, ARM CCA, Apple SE, Qualcomm QSEE). Each has its own attestation format + signing chain + revocation flow. **The single longest foundation component.** |
+| 1 | Crypto primitives library | RFC-0008 §2–4 | 2 EM | BLAKE3 (C ref impl), Ed25519 (ed25519-donna or verified C), BLS12-381 (blst, C+asm), ECVRF-ELL2 (forked from RFC 9381 reference). Mature C libraries exist; the work is wrapping + test-vector conformance + the ELL2 hash-to-curve port. |
+| 2 | CBOR canonical codec | RFC-0008 §1.1 | 1 EM | Deterministic encoding per RFC 8949 §4.2.1. Candidate baselines: `tinycbor` (Intel) or `nanocbor`. Most existing libraries are non-conformant on the deterministic-encoding rules; expect to fork one and tighten it. |
+| 3 | TEE attestation harness | RFC-0005 | 6 EM | Five vendor families (Intel TDX, AMD SEV-SNP, ARM CCA, Apple SE, Qualcomm QSEE) — all native C/C++ SDKs, no binding work. Each has its own attestation format + signing chain + revocation flow. Component must also enforce `ATTESTATION_FRESHNESS_WINDOW` (RFC-0005 §Attestation freshness, default 30d) uniformly. **The single longest foundation component.** |
 
 ### Network layer (3 components, ~9 engineer-months)
 
@@ -86,7 +143,7 @@ The economic engine; also the longest-tail effort.
 
 | # | Component | Spec | Effort | Notes |
 |---|---|---|---|---|
-| 12 | Canonical kernel library (`ants-canonical-kernels`) | RFC-0009 v0.2 | 6–12 EM | CPU INT8 reference kernels for x86 AVX2/AVX-512 + ARM NEON, FP16 fallback. GPU canonical kernels are explicitly *future work* per RFC-0009 and add another 6–18 EM each (per-platform). **The largest engineering risk in the entire corpus.** |
+| 12 | Canonical kernel library (`ants-canonical-kernels`) | RFC-0009 v0.5 | 6–12 EM | C library, expected to leverage `ggml` as computational foundation with the discipline layer (bit-exact reductions per §2.1, INT8-GPTQ-128, q24 conversion) above it. CPU INT8 reference kernels for x86 AVX2/AVX-512 + ARM NEON/SVE, FP16 fallback. GPU canonical kernels are explicitly *future work* per RFC-0009 and add another 6–18 EM each (per-platform: CUDA, ROCm, MPS). **The largest engineering risk in the entire corpus.** |
 | 13 | Inference orchestration | RFC-0003 v0.2, RFC-0009 v0.2 | 4 EM | Model loading, request routing, fast-path serving (the producer's chosen kernel), audited-path commit (commit-at-send with Merkle binding), e-process audit verifier role, Tier 1/2/3 dispatch. |
 
 ### Economy & coordination layer (2 components, ~4 engineer-months)
