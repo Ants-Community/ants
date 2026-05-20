@@ -1,7 +1,7 @@
 # RFC-0004 — Reputation: Two Layers, One Architecture
 
-**Status:** Draft · v0.3
-**Topic:** A reputation system in two layers — a consensus-free CRDT of self-authenticating fault proofs for individual slashing, and a small slow Proof-of-Unique-Hardware (PoUH) chain as ordered witness for pattern-based rules. The chain confirms what has happened. It does not create what happens. v0.3 adds **A-as-bond for high-stakes acts**, closing the single-decisive-act residual that v0.2 left implicit.
+**Status:** Draft · v0.4
+**Topic:** A reputation system in two layers — a consensus-free CRDT of self-authenticating fault proofs for individual slashing, and a small slow Proof-of-Unique-Hardware (PoUH) chain as ordered witness for pattern-based rules. The chain confirms what has happened. It does not create what happens. v0.3 added **A-as-bond for high-stakes acts**, closing the single-decisive-act residual that v0.2 left implicit. v0.4 specifies the **bond accounting model** (how `A` is measured, frozen, decayed during the hold, composed across overlapping acts) and clarifies the **fork-recovery bond formula** to use the pre-fault agreed state explicitly, closing the v0.3 circularity.
 **Audience:** You, if you have read enough blockchain whitepapers to be skeptical of one more — and willing to read another.
 **Depends on:** [RFC-0003](./RFC-0003-verification.md), [RFC-0005](./RFC-0005-identity.md)
 
@@ -475,7 +475,7 @@ caught by the standard slash:
 | Tier 3 verification committee member | `query_stakes / N` per member | If all `N` collude maliciously on an act of value `query_stakes`, the total bonded `A` slashed equals the act's worth — EV ≤ 0 |
 | L2 PoUH committee signer | `c_committee · pending_findings` per epoch | Caps the value a corrupt committee can sell by selectively suppressing pattern findings |
 | Perennial high-value cache write | estimated lifetime royalty value × risk multiplier | The write earns royalties over years; the bond covers expected total payoff plus a margin |
-| Fork-recovery vote | total `T` at stake in the recovery | The maximum case — the architecture's fixed point depends on this not going rogue, so the bond is the most expensive |
+| Fork-recovery vote | total `T` at stake **as of the pre-fault agreed state** (per §Fork-recovery sub-problem 2) | The maximum case — the architecture's fixed point depends on this not going rogue, so the bond is the most expensive. v0.4 clarifies: the bond is computed against the *pre-fault* state because the post-fault chain is by construction in dispute — the same timestamp that legitimises the fork defines the bond input |
 | Cross-economy settlement intermediation | settlement value × risk multiplier | If the settlement is inflated, the inflation is recoverable from the bond |
 
 The formulas are starting points. The constants and risk multipliers
@@ -509,6 +509,178 @@ contribution AND is targeting an act whose value exceeds even what years of
 contribution can bond*. That is a substantially smaller threat surface than
 the pre-v0.3 framing, and it is the smallest residual the corpus has so far
 demonstrated against patient defection.
+
+---
+
+## Bond accounting model
+
+*Added in v0.4 to close B2 from the pre-implementation criticality review.*
+
+§Bonds above says "lock a bond of `A`". This section specifies how that lock
+is computed, admitted, frozen, decayed during the hold, released, slashed,
+and composed across overlapping acts. Without these mechanics specified, the
+v0.3 bond mechanism is unimplementable.
+
+### Computing A
+
+Active reputation `A(peer, t)` is a non-negative `u64 μNCS` at every point
+in time (encoded per [RFC-0008](./RFC-0008-wire-formats.md) §6). It is the
+weighted sum of the peer's verified recent contributions with exponential
+decay at rate `δ_A`:
+
+```
+A(peer, t)  =  Σ over verified contributions c_i at time t_i  of
+                c_i · exp( -δ_A · (t - t_i) )
+```
+
+A "verified contribution" is any of: a Tier 1 inference served, a cache hit
+served, an audit completed, a cache hosting hour, a routing hop served —
+each weighted by its μNCS value per [RFC-0001](./RFC-0001-community-economy.md).
+Contributions are recorded as **counterparty-countersigned receipts** per
+RFC-0003 §"Tenure: default-grant-and-revoke" (the receipts structure that
+already supports tenure computation also supports `A` computation).
+
+`A` is **locally recomputable**. Anyone holding the peer's bag of
+counterparty-countersigned receipts can compute the same `A(peer, t)`. It
+is not stored as a number anywhere; it is derived on demand. This is the
+same property tenure `T` has — both `A` and `T` are deterministic
+functions of the receipt bag, differing only in their decay rates `δ_A` /
+`δ_T` and (for `T`) the per-identity rate cap `κ`.
+
+### Bondable A vs total A
+
+The peer's **bondable `A`** at time `t` is its total `A` minus all
+currently-locked bonds:
+
+```
+locked_total(peer, t)  =  Σ over currently-locked bonds  of  bond.amount
+bondable_A(peer, t)    =  A(peer, t)  -  locked_total(peer, t)
+```
+
+To enter a high-stakes act requiring a bond of amount `b`, the peer proves
+to the act's verifier that `bondable_A(peer, t) ≥ b`. The proof is the
+peer's receipt bag (or a selective-disclosure subset per
+[RFC-0003](./RFC-0003-verification.md)) plus a list of the peer's currently-
+locked bonds. The verifier recomputes `A`, sums the locks, and admits the
+new bond if and only if there is sufficient headroom.
+
+### Freezing the bond
+
+When a bond of amount `b` is admitted at time `t_start` for an act with
+dispute-window duration `BOND_DISPUTE_WINDOW` (RFC-0008 §7, default 7 days):
+
+- The bond enters the peer's `locked_bonds` set as the tuple
+  `(act_id, b, t_start, t_release, slash_target)` where
+  `t_release = t_start + BOND_DISPUTE_WINDOW` and `slash_target` is the
+  L1 fault-proof signature that would trigger the slash if filed.
+- The amount `b` is **frozen at its admitted value for the duration of the
+  hold** — it does not decay during the hold. The locked portion is
+  conceptually in escrow, isolated from the rest of `A`.
+- During the hold, `bondable_A(peer, t)` is `A(peer, t) - locked_total`. The
+  peer's serving-priority weight in the choke/unchoke loop (RFC-0001) and
+  eligibility weight in verifier selection use `bondable_A`, not full `A`
+  — the locked portion does not count toward priority during the hold.
+- All bond-admission events are signed by the admitting verifier and
+  propagated to the L1 CRDT alongside fault proofs. Other peers verify the
+  signature; the bond is publicly observable as locked.
+
+### Release and slash
+
+At time `t_release`:
+
+- **If during `[t_start, t_release]` a fault proof was propagated in L1
+  against the peer for this specific `act_id`**, the bond's `b` is added
+  to the standard slash event — destroying the locked amount along with
+  the rest of the slashed reputation. The bond is removed from
+  `locked_bonds` after the slash event finalises (L2 epoch attestation
+  per §Slash mechanics).
+- **If no fault proof for this `act_id` exists at `t_release`**, the bond
+  is released cleanly: removed from `locked_bonds` and returned to the
+  peer's available reputation pool. The released amount is treated as if
+  it had been a fresh contribution at `t_start` — i.e., it carries forward
+  in the decay function with the decay clock starting at `t_start`, not at
+  `t_release`. A bond that was held for the full dispute window has
+  effectively been *decaying mentally* during the hold even though the
+  locked value was frozen.
+
+The mental model: the bond is a *temporary withdrawal* from `A`'s
+exponentially-decaying pool, not a *fresh contribution*. Holding doesn't
+gain you any decay-clock advantage. This prevents a defector from
+"refreshing" their `A` by repeatedly locking and releasing bonds.
+
+### Multi-act composition
+
+Multiple acts in flight simultaneously each carry their own bond. The locks
+are **additive**:
+
+```
+locked_total(peer, t)  =  Σ over (act_id, b, t_start, t_release, _)
+                          in locked_bonds(peer)  of  b
+```
+
+A peer with `A(peer, t) = 1000` μNCS and two locked bonds of 300 μNCS each
+has `bondable_A = 400` μNCS. Attempting a third act requiring a bond of
+500 μNCS fails: the peer does not have enough headroom.
+
+This is the same accounting any decent escrow system uses, applied to
+reputation rather than to currency. The novelty is the source of `A`
+(RFC-0001's contribution-ledger via counterparty-countersigned receipts),
+not the bond mechanic itself.
+
+### Atomicity
+
+Bond admission is an atomic operation: either all of (verifier recomputes
+`A` and headroom, the bond is added to `locked_bonds`, the peer is admitted
+to the act, the admission is signed and propagated in L1) happen, or none
+happen. A peer participating in three Tier 3 committees simultaneously has
+three distinct bond records, each admitted at its own timestamp.
+
+If two acts arrive for the same peer simultaneously and both require bonds
+whose sum exceeds `bondable_A`, the first to acquire bond admission wins;
+the second fails. The peer must choose whether to retry the failed act
+later, after `A` has grown or another bond has released.
+
+There is no "partial bond" or "borrowing against future `A`". The bond
+must exist in the peer's currently-decayed `A` at admission time.
+
+### Verifier responsibility
+
+The verifier of a high-stakes act (per the act class — RFC-0003 §Tier 3
+for triangulation committees, this RFC §Layer 2 for PoUH committees, etc.)
+is responsible for performing the bond-admission check. Specifically:
+
+1. The peer's presented receipts pass RFC-0003-b's selective-disclosure
+   integrity checks (countersignatures valid, nonces fresh, timestamps
+   attributable, no double-counting).
+2. Computing `A(peer, t)` from the receipts gives ≥ the required bond.
+3. The peer's declared `locked_bonds` set is consistent with what L1 has
+   already propagated (the verifier can cross-check against the L1 CRDT
+   view).
+4. The bond admission event is signed by the verifier, added to L1, and
+   the act proceeds.
+
+A verifier who admits a bond against insufficient `bondable_A` is
+committing an attributable fault — the receipt math is a deterministic
+pure function, and any honest re-verifier will detect the discrepancy
+and propagate a fault proof against the misadmitting verifier. This
+makes bond-admission verification itself self-auditing through the
+standard L1 mechanism.
+
+### A consequence the design intends
+
+Because `A` decays at `δ_A`, and bonds are frozen at admission time, a
+peer that participates heavily in high-stakes acts is naturally limited in
+how many acts it can take on simultaneously. A peer with low recent
+contribution has low `A` and therefore low `bondable_A` and therefore
+limited high-stakes-act capacity. A peer with high recent contribution
+has higher capacity. The market clears on contribution, not on stake.
+
+This is the same property the (A, T, κ) spine was designed for, now
+applied to multi-act allocation: high-stakes participation is gated by
+recent honest contribution, not by accumulated capital, not by hardware
+volume, not by stake. The bond mechanic is the operational expression of
+the manifesto's "the network adapts to humans, not the other way around"
+at this layer.
 
 ---
 
@@ -683,6 +855,25 @@ to bite:
   and to pay both the bond and the prior contribution cost for a sufficiently
   valuable target, remains an irreducible residual — handed to the
   credible-fork-threat as the last line of defence.
+- **Bond admission atomicity under L1 propagation latency** (v0.4). Race
+  condition: verifier V1 admits a bond for peer P's act A at time `t`,
+  verifier V2 simultaneously admits a different bond for act B before V1's
+  admission has propagated. Both verifiers independently checked
+  `bondable_A` and both saw the same headroom — leading to over-locking.
+  Resolution probably: the later-timestamped admission is invalidated when
+  the conflict is detected at L1 propagation, and the peer must re-acquire
+  the lost slot. Exact resolution mechanism: open.
+- **Receipt bag size at scale** (v0.4). A mature peer accumulates thousands
+  of receipts over months. Recomputing `A` from the full bag at every
+  bond-admission is `O(receipts)`. Optimisation: the peer presents a
+  compressed time-bucketed summary plus selective opens of the N most-
+  recent receipts for verifier spot-checks. Mechanism not fully specified
+  beyond "selective disclosure per RFC-0003-b".
+- **Bonds across forks** (v0.4 ∩ RFC-0001 v0.3 ledger portability). When a
+  peer's reputation is ported across a fork (RFC-0001 v0.3's load-bearing
+  portability), are locked bonds also carried? Probably yes for unresolved
+  bonds, with the dispute window restarting from the fork point. Not
+  explicitly specified.
 
 ---
 

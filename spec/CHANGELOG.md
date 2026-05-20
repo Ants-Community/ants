@@ -595,3 +595,136 @@ model — how A is measured, frozen, decayed during bond hold), B4
 addressed in Amendments C and D following this one.
 
 ---
+
+## RFC-0004 · v0.3 → v0.4 · 2026-05-20 · Bond accounting model + fork-recovery bond fix
+
+Closes B2 and B6 from the pre-implementation criticality review — the two
+remaining BLOCK items in the reputation layer.
+
+### B2 — Bond accounting model
+
+**Was:** RFC-0004 v0.3 §Bonds said "lock a bond of A" without specifying how
+A is measured, frozen, decayed during the hold, composed across overlapping
+acts, or admitted atomically. The bond mechanism was conceptually clear but
+operationally underspecified — an implementer had to guess on every detail.
+
+**Now:** new §Bond accounting model in RFC-0004 v0.4. Specifies:
+
+- `A` is locally recomputable from counterparty-countersigned receipts (same
+  primitive as tenure `T`), encoded as `u64 μNCS` per RFC-0008 §6.
+- Bondable `A` is total `A` minus the sum of currently-locked bonds.
+- Bond admission is atomic and signed by the verifier, propagated through
+  L1 alongside fault proofs (so other peers see the lock).
+- Bonds are frozen at their admitted value for the hold duration — they do
+  *not* decay during the hold.
+- On release, the bond returns to the pool as if it had been a fresh
+  contribution at the *admission* time (preventing decay-clock laundering
+  by repeated lock/release cycles).
+- On slash, the bond's value is added to the standard slash event.
+- Multi-act composition is additive: parallel bonds sum.
+- Verifier responsibility: admit bonds only against verified `bondable_A`
+  headroom; misadmission is an attributable fault and triggers the
+  standard L1 slash mechanic against the misadmitting verifier.
+
+The intended consequence is that high-stakes participation is naturally
+limited by recent honest contribution — a peer with low recent A has low
+multi-act capacity, regardless of accumulated tenure. The market clears on
+contribution, not on accumulated capital. This is the same property the
+(A, T, κ) spine was designed for, now applied to multi-act allocation.
+
+**Why:** the bond mechanic is the core defence against single-decisive-act
+defection. Without an implementable accounting model, the mechanic exists
+in name only. v0.4 makes it implementable in code, reusing the (A, T, κ)
+spine primitives rather than introducing new ones — small surface area
+discipline.
+
+### B6 — Fork-recovery bond circularity
+
+**Was:** the v0.3 bond formula table said the fork-recovery vote bond was
+"total T at stake in the recovery". But during a fork-recovery event the
+chain itself is in dispute — "total T" is computed against *which* chain?
+
+**Now:** the table entry explicitly references the pre-fault agreed state
+(per §Fork-recovery sub-problem 2). The same timestamp that legitimises the
+fork (the attributable-fault proof's signed timestamp) also defines the
+state from which the bond is computed. The circularity dissolves through
+the existing fork-recovery construction — no new mechanism needed, just
+explicit cross-reference between §Bonds and §Fork-recovery.
+
+### What this does not close
+
+B4 (bootstrap sequence) remains, addressed in RFC-0010 (Amendment D
+below). After C+D, all BLOCK items from the pre-implementation criticality
+review plus all five BLOCK items from the post-0008/0009 re-check are
+closed.
+
+---
+
+## RFC-0010 · added · 2026-05-20 · Bootstrap Sequence
+
+A new RFC closing B4 from the pre-implementation criticality review — the
+last remaining BLOCK item, and the one without which `main()` of the
+reference client has no defined behaviour.
+
+### Why this is a new RFC, not an amendment
+
+B4 is genuinely cross-cutting. It touches every existing RFC — identity
+attestation flow, DHT join, chain genesis, cache participation, verification
+tier availability, economy initialisation, bond mechanism eligibility.
+Spreading the bootstrap spec across all six design RFCs would have made
+every one of them longer without making bootstrap itself any clearer. A
+dedicated RFC concentrates the answer in one place.
+
+### What it specifies
+
+- **Genesis state**: the CBOR-encoded structured object every peer must
+  agree on bit-for-bit, signed by all trustees at launch, hashed with
+  BLAKE3 to produce the network identity. Covers: protocol version,
+  embedding model hashes, trustee Ed25519 / BLS pubkeys + attestations,
+  trustee decay rate, drand network and initial round, bootstrap DHT
+  seeds, initial calibratable constants, launch timestamp, signature.
+- **First peer's flow**: 13-step concrete sequence from TEE attestation
+  through DHT join, L1 CRDT sync, L2 chain sync, cache participation,
+  drand subscription, and entering steady-state participation. With
+  failure modes specified (genesis hash mismatch, TEE attestation
+  failure, bootstrap DHT timeouts).
+- **Four phases**: tiny (1–9 peers), small (10–99), growing (100–999),
+  mature (1000+). Each phase has different capability availability,
+  different security assumptions, different governance posture.
+- **Capability matrix**: a table the reference client consults to
+  enable/disable features per phase. Tier 2 audit becomes available at
+  N≥20; Tier 3 at N≥50; PoUH BLS transition at K=16; etc.
+- **Self-securing condition**: mathematical statement of when the
+  network no longer depends on trustee honesty for security.
+  Approximately `N ≈ 200–500` peers active for 3–6 months under nominal
+  parameters.
+- **Reference launch sequence**: the concrete recipe for "v0.1 mainnet
+  launch" — trustee selection, GenesisState assembly, drand integration,
+  embedding model packaging, public release, 30-day monitoring targets,
+  6-month sunset checkpoint per GOVERNANCE.md.
+
+### What this does not close
+
+RFC-0010 is itself early-draft. Specific calibrations (`δ_genesis`, exact
+phase-transition thresholds) are b2-class testnet measurements. Cold-start
+for late joiners, bootstrap DHT seed liveness, trustee key rotation during
+bootstrap, off-network bootstrap — all flagged as open. Reference launch
+sequence is recipe-level but actual launch remains a future event the
+GOVERNANCE.md process must convene.
+
+### The state after C+D
+
+All six BLOCK items from the pre-implementation criticality review (B1
+canonical numerics, B2 bond accounting, B3-partial attestation wrapper, B4
+bootstrap, B5 embedding governance, B6 fork-recovery bond circularity) are
+closed. All five BLOCK items from the post-0008/0009 re-check (B-NEW-1
+through B-NEW-5) are closed. HARD and EDGE items from both reviews are
+either closed or explicitly tracked in the open-questions sections of the
+relevant RFCs.
+
+The spec corpus is internally complete enough for the all-in-one reference
+client implementation to begin — and for an external review of the whole
+project to be a meaningful exercise rather than a cataloguing of known
+gaps.
+
+---
