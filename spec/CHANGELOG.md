@@ -246,3 +246,79 @@ non-load-bearing for individual slashes, and gracefully degradable — but the
 reader is invited to test whether the reconciliation is sound.
 
 ---
+
+## RFC-0004 · v0.2 → v0.3 · 2026-05-20 · A-as-bond for high-stakes acts
+
+A focused amendment closing — partially, and honestly — a residual that the
+v0.2 "strategically inert" argument left implicit.
+
+### Was (v0.2)
+
+The §Tenure section presented a trilemma against farmed tenure: a Sybil with
+mature `T` faces three branches — never used (zero influence), used honestly
+(it *is* the work the network wanted), used to collude (attributable fault
+zeroes the tenure). The argument was claimed complete ("no fourth branch").
+
+It was not complete. It implicitly assumed the one-shot payoff of a collusive
+act is less than the slash value `S_NCS`. For high-stakes acts — Tier 3
+verification on a multi-million-dollar query, a fork-recovery vote, a
+perennial high-value cache write — the single-act payoff can exceed `S_NCS`.
+A defector with mature tenure could execute such an act once, accept the
+slash, and come out ahead. The branch existed; it was just not named.
+
+A related clarification on the framing in earlier draft cycles: the
+"patient adversary farming 10,000 Sybils for years" scenario was imprecise.
+Under RFC-0005's PoUH, each Sybil requires real attested hardware — 10,000
+attested identities cost the floor RFC-0005 tabulates (~$7M/year in
+cloud-TEE rental, more for owned hardware). PoUH already constrains the
+mass-Sybil patient farming variant; what it does not constrain is *one
+legitimately-attested identity that defects once decisively*. That is the
+residual that this amendment addresses.
+
+### Now (v0.3)
+
+A new mechanism: **A-as-bond for high-stakes acts**. Acts whose plausible
+one-shot payoff could exceed `S_NCS` require the actor to lock a quantity of
+`A` (active reputation) as a temporary bond, slashed if the act is later
+determined malicious. The bond is released after a dispute window if no fault
+proof emerges.
+
+The mechanism exploits the (A, T, κ) split already in the spine. `A` decays
+fast (δ_A, minute-scale) and **cannot be accumulated in advance**. Tenure can
+be farmed slowly under κ; active reputation cannot. A defector with mature
+`T` but neglected `A` therefore cannot bond enough for a high-stakes act.
+The only path to a bond large enough is sustained recent honest participation
+— which is the behavior the network wanted. The "patient farm + one-shot
+cash-in" path is closed.
+
+RFC-0004 v0.3 enumerates the act classes that require bonds (Tier 3
+verification committee membership, L2 PoUH committee role, perennial
+high-value cache writes, fork-recovery votes, cross-economy settlement
+intermediation) and specifies the bond formula per class.
+
+The trilemma becomes a quadrilemma — explicit fourth branch added: *used to
+collude at high stakes → requires an A-bond ≥ the payoff; the bond can only
+be assembled by sustained recent honest participation; therefore the cost of
+attempting the act is at least the cost of being honest first*. The
+inversion-by-amortisation argument that runs through the corpus reapplies at
+this finer grain.
+
+### Why
+
+The earlier framing implied that the patient-adversary problem was mass
+quantity. It is not. PoUH (RFC-0005) bounds the mass case at hardware-cost
+floors that meaningfully deter all but state-actor budgets. The real
+residual was always single-identity defection on payoffs higher than the
+standard slash value. A-as-bond is the structural mechanism that closes this
+because — by spine construction — `A` is the resource that cannot be bought
+cheaply in advance. The defence reuses the existing (A, T, κ) primitive
+rather than adding a new one, which is the small-surface-area discipline the
+manifesto asks for.
+
+What remains, acknowledged: state-actor-scale adversaries with both the
+budget for genuine sustained participation and a specific high-value target
+whose payoff exceeds bondable `A`. This is the irreducible residual — the
+same shape as every "trust-closed" claim in the corpus. The amendment does
+not claim to close it. It claims to narrow it.
+
+---

@@ -1,7 +1,7 @@
 # RFC-0004 — Reputation: Two Layers, One Architecture
 
-**Status:** Draft · v0.2
-**Topic:** A reputation system in two layers — a consensus-free CRDT of self-authenticating fault proofs for individual slashing, and a small slow Proof-of-Unique-Hardware (PoUH) chain as ordered witness for pattern-based rules. The chain confirms what has happened. It does not create what happens.
+**Status:** Draft · v0.3
+**Topic:** A reputation system in two layers — a consensus-free CRDT of self-authenticating fault proofs for individual slashing, and a small slow Proof-of-Unique-Hardware (PoUH) chain as ordered witness for pattern-based rules. The chain confirms what has happened. It does not create what happens. v0.3 adds **A-as-bond for high-stakes acts**, closing the single-decisive-act residual that v0.2 left implicit.
 **Audience:** You, if you have read enough blockchain whitepapers to be skeptical of one more — and willing to read another.
 **Depends on:** [RFC-0003](./RFC-0003-verification.md), [RFC-0005](./RFC-0005-identity.md)
 
@@ -332,7 +332,14 @@ farmed tenure is **strategically inert**:
   attributable fault proof; the proof propagates through Layer 1 and zeroes
   the tenure. Identity becomes worthless.
 
-There is no fourth branch. The marriage of (A, T, κ) plus L1 fault
+*Claimed in v0.2: there is no fourth branch.* The claim was implicitly
+conditional on the act's one-shot payoff being bounded by `S_NCS`. **v0.3
+acknowledges the implicit fourth branch** — collusion on an act whose
+single-shot payoff exceeds `S_NCS` — and closes it via the §Bonds
+mechanism below: such acts require an A-bond that a defector with mature
+`T` but neglected `A` cannot post. With that branch named, the trilemma is
+strict for the standard case and the quadrilemma is strict for the
+high-stakes case. The marriage of (A, T, κ) plus L1 fault
 propagation plus RFC-0003's commit-at-send is what makes the inversion work:
 farmed tenure is uncatchable at accrual, but useless without being used, and
 self-destructive when used. This adds *no new* security parameter — its
@@ -375,6 +382,133 @@ explicit access to the underlying L1 proofs. Disputes do not reverse the
 L1 slash event itself; they only adjust the L2 pattern finding. This is the
 correct shape — the L1 fact stands as long as VERIFY passes; the L2
 *interpretation* of facts is open to argument.
+
+---
+
+## Bonds for high-stakes acts
+
+*Added in v0.3.* The trilemma in §Tenure showed three branches against
+farmed tenure. The implicit fourth branch — used to collude on an act whose
+one-shot payoff exceeds the standard slash value — was not closed by L1
+fault propagation alone. This section names that branch and closes it.
+
+### The threat
+
+The standard slash mechanics in §Slash work because the cost of being caught
+(the value of standing destroyed, `S_NCS` from
+[RFC-0001](./RFC-0001-community-economy.md) v0.3) exceeds the gain from
+typical fraud — token-level inference fraud, low-value cache writes, single
+cache poisoning. All bounded in single-act payoff.
+
+Some acts are not typical. They have one-shot payoffs that can dominate
+`S_NCS`:
+
+- A Tier 3 verification committee whose query is declared at high stakes —
+  medical, legal, financial — with the consumer's stakes-declaration field
+  carrying real value.
+- An L2 PoUH committee role where suppressing one pattern finding for one
+  epoch has outsize downstream effect.
+- A write of a perennial-validity cache entry in a high-value embedding
+  region (legal canon, regulated-domain factual claims).
+- A vote in a fork-recovery succession, where one decisive vote may tip
+  which trustee set inherits authority.
+- A cross-economy cache settlement intermediation
+  ([RFC-0006](./RFC-0006-payment-terms.md)) where one inflated quote may
+  extract value before being caught.
+
+For these acts, the standard deterrent fails: an attacker who accepts the
+slash can still come out ahead if the act's payoff exceeds `S_NCS`. The L1
+fault proof zeroes their tenure; the chain confirms the slash; the identity
+dies — but the value extracted is greater than the value lost.
+
+### The mechanism
+
+For any act enumerated above, the protocol requires the actor to **lock a
+bond of `A`** (active reputation) before the act is admitted. The bond is
+held for the duration of the act plus a dispute window. If a fault proof
+against the act is propagated in L1 (or a pattern finding against the actor
+is recorded in L2) during the bond period, the bonded `A` is *added to* the
+standard slash. If the bond period elapses without a fault, the `A` is
+released back to the actor's available pool.
+
+There is no new cryptographic primitive. The slash mechanism is the same one
+specified in §Slash; the bond simply lifts the slashable surface from `T`
+post-hoc to `A` at the moment of high-stakes participation.
+
+### Why this works
+
+The mechanism does not depend on detecting *intent*. It depends on a
+structural property of the spine introduced in §Tenure:
+
+> `A` decays at δ_A on the scale of minutes. **It cannot be accumulated in
+> advance.** A peer's available `A` at any moment is, by construction,
+> approximately proportional to its recent honest contribution rate.
+
+A defector with mature `T` but neglected `A` therefore *does not have enough
+`A`* to post the bond required by a high-stakes act. They face a forced
+choice:
+
+- **Skip the act.** Patient farming was for nothing; no high-stakes attack
+  is available to them.
+- **Bond enough.** This requires having maintained recent honest
+  participation at a rate sufficient to assemble the bond. *That sustained
+  participation is the contribution the network wanted.* The cost of
+  preparing the attack approaches the cost of being honest. If the attack
+  succeeds, the bond is slashed and the prior tenure is also zeroed through
+  the standard slash chain. If it fails, the actor has paid for sustained
+  honest participation that benefited the network for the entire run-up.
+
+The inversion-by-amortisation argument that runs through the corpus
+reapplies at this finer grain: time is the resource that cannot be bought,
+and `A` is the *fresh* expression of time. The bond closes the high-stakes
+branch by demanding fresh participation that, by definition, cannot be
+backdated.
+
+### Bond formulas
+
+Per act class, the required bond. The principle holding across all five:
+bond ≥ plausible one-shot payoff, so the act is not profitable even if not
+caught by the standard slash:
+
+| Act class | Bond formula | Rationale |
+|---|---|---|
+| Tier 3 verification committee member | `query_stakes / N` per member | If all `N` collude maliciously on an act of value `query_stakes`, the total bonded `A` slashed equals the act's worth — EV ≤ 0 |
+| L2 PoUH committee signer | `c_committee · pending_findings` per epoch | Caps the value a corrupt committee can sell by selectively suppressing pattern findings |
+| Perennial high-value cache write | estimated lifetime royalty value × risk multiplier | The write earns royalties over years; the bond covers expected total payoff plus a margin |
+| Fork-recovery vote | total `T` at stake in the recovery | The maximum case — the architecture's fixed point depends on this not going rogue, so the bond is the most expensive |
+| Cross-economy settlement intermediation | settlement value × risk multiplier | If the settlement is inflated, the inflation is recoverable from the bond |
+
+The formulas are starting points. The constants and risk multipliers
+(`c_committee`, the `× risk multiplier` factors) are explicit calibration
+parameters of this RFC, expected to be revised after testnet observation —
+the same b2-style discipline applied elsewhere in the corpus.
+
+A consequence worth flagging: the bond required for fork-recovery voting
+scales with the *entire network's* `T` at stake. In a mature network this
+makes participating in a fork-recovery vote *very* expensive in `A` — which
+is intentional. The credibility of the fork-threat depends on its voters
+not having been bought; the bond ensures that any vote requires costly
+fresh skin-in-the-game.
+
+### What this does not close
+
+A state-actor-scale adversary with both the budget for sustained genuine
+honest participation *and* a specific high-value target whose payoff
+exceeds the maximum bondable `A` remains a residual. This is acknowledged.
+It is the same residual the manifesto's "stewarded by a foundation"
+implicitly addresses with the credible-fork-threat: if a sufficiently
+determined adversary commits to enough genuine work to mount one decisive
+act, the ultimate defence is the community's ability to detect, fork, and
+re-seed — the bounded social-coordination assumption at the architecture's
+floor.
+
+What v0.3 claims is narrowing, not closing. The residual was previously
+*any defector with mature tenure can cash in once on a high-payoff act*. It
+is now *only an attacker who has paid for years of genuine network
+contribution AND is targeting an act whose value exceeds even what years of
+contribution can bond*. That is a substantially smaller threat surface than
+the pre-v0.3 framing, and it is the smallest residual the corpus has so far
+demonstrated against patient defection.
 
 ---
 
@@ -532,6 +666,23 @@ to bite:
 - **Censorship at L2** is not cryptographically attributable. A committee
   that selectively omits pattern findings is detectable statistically
   (over many epochs) but not by a single proof. Open.
+- **`δ_A` calibration** (v0.3). The §Bonds mechanism rests on `A` decaying fast
+  enough that a defector cannot accumulate it in advance — but slow enough that
+  legitimate peers do not constantly re-earn it. Probably minutes-to-hours;
+  empirical, b2.
+- **Bond formula multipliers** (v0.3). The starting bond formulas in §Bonds
+  give the shape (bond ≥ plausible one-shot payoff); the constants and risk
+  multipliers (`c_committee`, the explicit `× risk multiplier` factors) are
+  expected to be revised after testnet observes real high-stakes act
+  distributions.
+- **Dispute window duration for bond release** (v0.3). Too short and provable
+  malice may not surface in time; too long and bonds tie up productive `A`.
+  Default starting point: one week. Empirical.
+- **State-actor + bonded high-stakes act** (v0.3). An attacker willing to
+  sustain genuine honest contribution long enough to bond a high-stakes act,
+  and to pay both the bond and the prior contribution cost for a sufficiently
+  valuable target, remains an irreducible residual — handed to the
+  credible-fork-threat as the last line of defence.
 
 ---
 
