@@ -28,31 +28,33 @@ We are building the same thing, with software. We call it **ANTS**.
 
 ## We Build
 
-6. **We build a protocol, not a product.** The protocol is open. The code is auditable. The rules are written down. What is built on top is anyone's business.
+6. **We build a protocol, not a product.** The protocol is open. The code is auditable. The rules are written down. What is built on top is anyone's business. Communities, companies, individuals, and laboratories may all operate on the same protocol, in the terms they each declare. The protocol does not choose between them.
 
-7. **We build by barter.** To receive intelligence from the network, you must contribute to it — compute, storage, bandwidth, verification, attention. There is no money in the protocol. The only currency is participation.
+7. **We build a community by barter.** The community that maintains and grows this protocol exchanges work directly, without money among its members. To receive from the colony, you contribute to it — compute, storage, bandwidth, verification, attention. The barter is the community's economy, not the protocol's only economy. Others, operating on the same protocol with their own terms, are not less welcome for choosing differently.
 
-8. **We build for every machine.** The laptop on a desk in Naples is as welcome as the GPU farm in Reykjavík. Each peer contributes what it can; each is served in proportion to what it contributes. No machine is too small. No model is too large.
+8. **We build for every machine.** The smartphone on a Lagos bus, the laptop on a desk in Naples, the workstation in Berlin, the GPU farm in Reykjavík — every device that can connect to the network has a role. Some run inference; some carry the cache; some route; some verify; some witness. No tier is too small to participate. No tier is too large to be welcome. Each peer contributes what it can; each is served in proportion to what it gives.
 
-9. **We build verifiable trust into the hardware.** Every peer proves, cryptographically, that it is running the code it claims to be running. No central authority decides who is honest. The network decides, locally, every second, in every interaction.
+9. **We build memory into the network.** The colony's intelligence is not only the work it does in the moment — it is the work it has already done, retained, addressable, and reusable. Every honest answer becomes the network's answer next time the question, or one near enough, is asked. The cache is not an optimization. It is the colony's collective memory.
 
-10. **We build for sovereignty.** Data crosses no border it does not need to cross. Inference happens under the law of the user, not the law of the vendor. The network adapts to humans, not the other way around.
+10. **We build verifiable trust into the hardware.** Every peer proves, cryptographically, that it is running the code it claims to be running. No central authority decides who is honest. The network decides, locally, every second, in every interaction — and the protocol's consensus layer assigns each attested machine exactly one voice, no more, no less.
 
-11. **We build for the long term.** The protocol must outlive its founders, its first language, and its first hardware generation. Every decision asks: will this still be defensible in twenty years?
+11. **We build for sovereignty.** Data crosses no border it does not need to cross. Inference happens under the law of the user, not the law of the vendor. The network adapts to humans, not the other way around.
+
+12. **We build for the long term.** The protocol must outlive its founders, its first language, and its first hardware generation. Every decision asks: will this still be defensible in twenty years?
 
 ---
 
 ## We Refuse
 
-12. **We refuse to issue a token.** ANTS is not a financial instrument. It is not an investment. It is not a speculation. The protocol earns no rent and pays no dividend. Anyone who builds a token on top of ANTS is not part of ANTS.
+13. **We refuse central authority over the protocol.** Any backdoor, any master key, any "for emergencies only" override is a betrayal of the design. We will not build them. We will refuse to add them when asked. We will fork against them if they appear.
 
-13. **We refuse to identify our users.** No KYC, no account, no phone number, no real name. There is hardware, and there is reputation. That is enough.
+14. **We refuse to identify our users.** No KYC, no account, no phone number, no real name. There is hardware, and there is reputation. That is enough.
 
-14. **We refuse central authority over the protocol.** Any backdoor, any master key, any "for emergencies only" override is a betrayal of the design. We will not build them. We will refuse to add them when asked. We will fork against them if they appear.
+15. **We refuse to issue a token at the protocol layer.** ANTS does not mint, distribute, vest, sell, or speculate. The protocol is not a financial instrument and will not become one. What anyone builds on top of the protocol is their choice and their consequence; the protocol does not bless it, fund it, or guarantee it.
 
-15. **We refuse to be owned.** ANTS is stewarded by a foundation, not a company. No share of it is for sale. No fork can call itself ANTS unless it carries these commitments forward, in full.
+16. **We refuse to be owned.** ANTS the project — the canonical specification, the reference implementation, the name, the marks — is stewarded by a foundation, not a company. No share of it is for sale. No fork can call itself ANTS unless it carries these commitments forward, in full. The protocol, once deployed, belongs to its peers and to no one else.
 
-16. **We refuse to compete on price.** We are not the cheapest way to do inference. We are the only way to do inference that belongs to its users.
+17. **We refuse to extract rent.** The foundation that stewards ANTS does not charge for the protocol, gate its features, or capture the network it built. What we make is forever free to use, fork, and outgrow. We earn the right to maintain ANTS by maintaining it well — by no other means.
 
 ---
 
