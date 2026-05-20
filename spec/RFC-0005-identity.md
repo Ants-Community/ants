@@ -62,6 +62,49 @@ The attestation report is **not stored on the reputation chain**. It is stored b
 
 Attestation reports have **expiration windows** (typically a few weeks to a few months, depending on vendor). When a report expires, the peer must obtain a fresh one. This handles two problems: (a) a stolen TEE that has been remotely repaired or replaced gets a new attestation; (b) a compromised vendor key can be retired by waiting for old attestations to expire.
 
+### Attestation freshness window
+
+*Added in v0.1 (Round 4 amendment) to close the circular reference
+raised by the multi-persona Round 2 review (TEE-security persona):
+RFC-0010 v0.2 §Trustee key rotation requires "fresh, valid TEE
+attestation" but RFC-0005 did not define "fresh."*
+
+A TEE attestation is considered **fresh** for protocol-acceptance
+purposes if it was issued by the vendor's attestation service within
+the **`ATTESTATION_FRESHNESS_WINDOW`** preceding its presentation. The
+default window is **30 days**, calibratable per RFC-0008 §7. The
+window is bounded below by the vendor's typical attestation re-issue
+cadence (Intel TDX, AMD SEV-SNP, ARM CCA all issue on demand at near-zero
+cost; Apple Secure Enclave is less flexible) and bounded above by the
+acceptable lag for revocation propagation (longer windows mean
+compromised TEE keys remain usable for longer).
+
+The freshness check is a **wall-clock comparison against the
+attestation's signed `issued_at` timestamp**, with a tolerance of ±5
+minutes for clock skew between the verifier and the vendor's
+attestation service. A peer presenting an attestation issued more than
+`ATTESTATION_FRESHNESS_WINDOW` ago is treated as not-attested and must
+refresh before further interaction.
+
+The window applies uniformly to every context where attestation is
+required: the standard peer-handshake flow above, trustee key-rotation
+announcements (RFC-0010 §Trustee key rotation), bond admission for
+high-stakes acts (RFC-0004 §Bonds), and committee role assumption
+(RFC-0004 §Layer 2). "Fresh" means the same thing everywhere it
+appears in the corpus.
+
+**Why 30 days, not stricter.** A stricter window (7 days) would force
+peers behind intermittent connectivity to re-attest more often than
+their network access supports — punishing the home-user peer the
+protocol explicitly welcomes. A looser window (90 days) would extend
+the post-vendor-compromise window during which old attestations remain
+usable. Thirty days is the rough midpoint that matches typical
+vendor revocation-propagation latency in 2026 and the cadence at which
+honest operators can reliably refresh without operational friction.
+The value is calibratable on b2 evidence; the *mechanism* — wall-clock
+freshness with a defined window — is the contribution this section
+makes.
+
 ---
 
 ## Multi-vendor reputation weighting

@@ -1,6 +1,6 @@
 # RFC-0008 — Wire Formats, Crypto Primitives, and Reference Constants
 
-**Status:** Reference · v0.3 (living standard)
+**Status:** Reference · v0.4 (living standard)
 **Topic:** The concrete byte-level choices the protocol makes once and refers to from everywhere else.
 **Audience:** You, if you are about to write code.
 **Depends on:** all design RFCs (this document is the implementation glue between them).
@@ -393,6 +393,10 @@ changes within a major version are permitted.
 | `BLS_TRANSITION_K` | §3.3 above | 16 (Ed25519 ≤ K, BLS > K) | C |
 | `DRAND_TIMEOUT` | §4.3 above | 30 seconds | C |
 | `ROTATION_ADMISSION_WINDOW` | RFC-0010 §Trustee key rotation | 7 epochs (≈ 1 week) | C |
+| `T_FORK_CHOICE_CAP` | RFC-0004 §Fork choice by Σ T_eff | TBD on b2 (≈ 2 years of κ-bound tenure) | C |
+| `R_ARCHIVE_MIN` | RFC-0004 §Archive nodes and the pruning-DoS defence | 8 distinct holders per pruned proof | C |
+| `EMERGENCY_REVOCATION_WINDOW` | RFC-0010 §Equivocation escape hatch | 30 epochs (≈ 30 days) | C |
+| `ATTESTATION_FRESHNESS_WINDOW` | RFC-0005 §Attestation freshness window | 30 days | C |
 | `POUH_COMMITTEE_SIZE_K` | RFC-0004 | 64 | C (bootstrap-scales) |
 | `POUH_BLOCK_TIME` | RFC-0004 | 30 seconds | C |
 | `POUH_FINALITY_THRESHOLD` | RFC-0004 | ⌈2K/3⌉ | P |

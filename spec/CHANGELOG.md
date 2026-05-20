@@ -885,6 +885,185 @@ acknowledged as irreducible or testnet-dependent.
 
 ---
 
+## Round 4 HARD — closures from multi-persona Round 2 review · 2026-05-20
+
+Five architecturally meaningful closures from the Round 2 multi-persona
+review (`REVIEW-multi-persona-2026-05-round2.md`), each addressing a
+new concern arising from the Round 1+2+3 fixes themselves. The Round 2
+review explicitly framed: "now that the design is filled in, does it
+survive its own additions?" — these are the five places where the answer
+needed sharpening before continuing.
+
+### RFC-0004 v0.5 → v0.6 (1) — Saturating Σ T_eff for fork choice
+
+**Was:** §Partition recovery §Fork choice by Σ T used raw `Σ T` as
+the metric for reconciling competing finalised chains.
+
+**Now:** §Fork choice by Σ T_eff applies a saturating transform
+`T_eff(T) = T_CAP · (1 − exp(−T / T_CAP))` to `T` *for fork-choice
+purposes only*. Properties: linear regime for young peers, saturating
+regime for tenured peers, monotone+smooth+deterministic, no threshold
+cliff. The cap applies **only** to fork-choice — raw `T` still governs
+verifier-set eligibility, bond capacity, persistence, and the
+slow-decay floor. New constant `T_FORK_CHOICE_CAP` added to RFC-0008
+§7 (default ≈ 2 years of κ-bound tenure, b2-calibrated).
+
+**Why:** the DS-systems persona and the game-theorist persona of the
+Round 2 review *independently* identified the same long-tail concern:
+raw `Σ T` makes a 10-year peer weigh 10× a 1-year peer, so fork choice
+in a mature network is dominated by historical peers — "founder weight
+rebranded as tenure dominance," in literal tension with the
+manifesto's authority-decay arguments and with RFC-0010's δ_genesis
+sunset. The saturating transform preserves the metric's robustness
+against fresh-Sybil forks (the original purpose) while preventing the
+metric from collapsing into pure age-weighting in the long run.
+Capping `T` in non-fork-choice contexts would punish exactly the
+long-term honest contribution the spine is designed to reward — hence
+the surgical scope.
+
+### RFC-0004 v0.5 → v0.6 (2) — Archive nodes and the pruning-DoS defence
+
+**Was:** §G-Set pruning §Archive nodes specified retention as an
+"emergent optional role" with an unspecified NCS reward and no
+minimum-redundancy requirement. The safe-direction-of-error rule
+(late joiners default-treat as slashed when proofs cannot be
+retrieved) combined with optional retention created an unaddressed
+attack surface.
+
+**Now:** §Archive nodes and the pruning-DoS defence specifies three
+composable layers: (1) **minimum-redundancy target** `R_ARCHIVE_MIN`
+(default 8) per pruned proof, monitored by the L2 committee as part
+of each epoch summary's rarity flag; (2) **NCS reward scaled by
+inverse redundancy** — a proof held by only 1 archive earns 8× the
+baseline retrieval fee; (3) **passive late-joiner archiving** —
+verified historical proofs are retained by default for at least one
+epoch and may be retained indefinitely. `R_ARCHIVE_MIN` added to
+RFC-0008 §7.
+
+**Why:** the DS-systems persona noted that the safe-direction rule
+"converts an impossible slash-fabrication attack into an isolation
+attack" — an adversary withholding valid proofs forces late joiners to
+default-slash. The fix raises the cost of that attack from "drop one
+peer from archive duty" to "convince a quorum of archives + outpace
+the reward-scaling + suppress passive new-joiner archiving" — the same
+state-actor-residual posture the corpus takes everywhere else, now
+explicit at the archive layer. The mechanism uses existing primitives
+(L2 epoch summaries, gossip-observed hold counts, retrieval fees), no
+new cryptography.
+
+### RFC-0009 v0.3 → v0.4 (early) — Bit-exact per-token scale computation
+
+**Was:** §3.2 specified per-token symmetric dynamic INT8 quantization
+with the scale derived "deterministically from the input" — but did
+not pin the recipe for the max-activation reduction or the scale
+arithmetic itself.
+
+**Now:** new §2.1 "Bit-exact per-token scale computation" pins four
+steps: (1) absolute-value pass via scalar IEEE-754 or SIMD `vandps`
+on the sign-mask (equivalent); (2) max reduction via a **left-biased
+binary tree** over a power-of-two-padded array with `-∞` padding;
+(3) scale by direct FP32 divide `max_abs / 127.0f`, **not** by
+precomputed reciprocal multiplication; (4) explicit zero-token
+sentinel to prevent platform-dependent NaN/Inf propagation. The
+general rule applies to any FP32 value derived from input data and
+used as a multiplicative factor downstream.
+
+**Why:** the verifiable-computation persona correctly identified the
+weakest seam in v0.3's bit-exactness argument: "the INT8 × INT8 →
+INT32 accumulator is exact, but the *scale values* are runtime-derived
+from activation data, and if two honest implementations compute
+max-activation in different order, scales can differ in the last bits
+and the downstream dequantize becomes non-bit-identical." The fix
+costs essentially nothing on modern CPUs (left-biased tree is the
+default of standard SIMD horizontal-max; divide-vs-reciprocal is a
+one-instruction swap), but "essentially nothing" is not zero — and
+the canonical recipe is the only place where the bit-exact contract
+holds.
+
+### RFC-0010 v0.2 → v0.3 — Equivocation freeze escape hatch
+
+**Was:** §Equivocation said a slot frozen by a trustee equivocation
+"resolves" only through a `TrusteeRevocation` with full witness
+threshold. The standard `TrusteeRevocation` path required the
+remaining trustees to coordinate witness acks in real time —
+implicitly assuming synchronous availability across all jurisdictions
+during a crisis.
+
+**Now:** new §Escape hatch from the freeze without synchronous
+coordination specifies an **asynchronous** ack accumulation protocol.
+The first remaining trustee publishes a *provisional* envelope (no
+`prev_sig`, reason `SUSPECTED_COMPROMISE`); other trustees may append
+acks to it at any point within the extended
+**`EMERGENCY_REVOCATION_WINDOW`** (default 30 epochs ≈ 30 days,
+calibratable). The envelope becomes final the moment accumulated acks
+reach `⌈2/3 · (T − 1)⌉`. Anti-equivocation discipline preserved:
+a trustee signing two conflicting provisionals commits its own
+equivocation. New constant added to RFC-0008 §7.
+
+**Why:** the applied-cryptography persona identified the deadlock case:
+trustee compromise + key loss + attacker equivocation locks the slot,
+and the recovery path required real-time multi-jurisdiction coordination
+during a crisis. The fix removes the synchronous-coordination
+assumption without changing the quorum requirement. Safety (`⌈2/3 · (T
+− 1)⌉` of remaining trustees still required) is preserved; what
+changes is the coordination shape (acks arrive asynchronously, from
+any jurisdiction, over a 30-day window). The honest framing: the trust
+assumption did not weaken; the practical operating envelope of the
+same assumption widened to match the global, multi-jurisdiction
+reality of the trustee set.
+
+### RFC-0005 v0.1 (early, Round 4 amendment) — Attestation freshness window
+
+**Was:** §The attestation flow mentioned that attestations "have
+expiration windows (typically a few weeks to a few months, depending
+on vendor)" but did not define "fresh" precisely. RFC-0010 v0.2's
+trustee-rotation §Admission rules required `new_attestation` to be
+"fresh, valid TEE attestation per RFC-0005" — a circular reference.
+
+**Now:** new §Attestation freshness window specifies
+**`ATTESTATION_FRESHNESS_WINDOW`** (default 30 days, calibratable per
+RFC-0008 §7) as a wall-clock comparison against the attestation's
+signed `issued_at` timestamp, ±5 minutes clock-skew tolerance. The
+window applies uniformly to every context in the corpus where
+attestation is required: standard peer handshake, trustee key
+rotation, bond admission, committee role assumption. "Fresh" now
+means the same thing everywhere it appears.
+
+**Why:** the TEE-security persona correctly flagged the circular
+reference. The fix is the smallest possible: pick a window, pin a
+clock-skew tolerance, apply uniformly. Thirty days is the rough
+midpoint matching vendor revocation-propagation latency in 2026 and
+honest-operator refresh cadence; calibratable on b2.
+
+### RFC-0008 v0.3 → v0.4 (Reference)
+
+Four new calibratable constants added to §7:
+
+- `T_FORK_CHOICE_CAP` (≈ 2 years of κ-bound tenure)
+- `R_ARCHIVE_MIN` (8 distinct holders per pruned proof)
+- `EMERGENCY_REVOCATION_WINDOW` (30 epochs ≈ 30 days)
+- `ATTESTATION_FRESHNESS_WINDOW` (30 days)
+
+All Calibratable per the C/P distinction; non-breaking additions per §9.
+
+### State after Round 4 HARD
+
+The five "new concerns arising from the fixes" of the Round 2 review
+are closed. The Round 2 review's twelve EDGE register-correction items
+remain open (sequencing them next, in one tighter pass). The Round 2
+"ack-only or operational" items (TLA+ contributor identification,
+foundation funding, MoE/SpecDec/long-context canonical-recipe
+extensions, etc.) are downstream of spec work and remain so.
+
+The corpus continues to converge: each review surfaces a tighter and
+smaller set of concerns, and each closure round reuses existing
+primitives rather than introducing new ones. The Round 2 review's
+bottom-line observation — that the project has shifted from "are we
+specifying well" to "are we executing" — remains the correct framing
+for the next phase.
+
+---
+
 ## Round 3 — EDGE register corrections · 2026-05-20
 
 The five EDGE-tier items from the multi-persona review of 2026-05-20,

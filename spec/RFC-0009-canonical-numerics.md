@@ -1,6 +1,6 @@
 # RFC-0009 — Canonical Numerics for Verifiable Inference
 
-**Status:** Draft · v0.3 (early — substantial revision expected once the reference kernel library exists and the b2 testnet measures its honest-noise floor)
+**Status:** Draft · v0.4 (early — substantial revision expected once the reference kernel library exists and the b2 testnet measures its honest-noise floor)
 **Topic:** The numerical recipe that two honest peers, on different hardware, must agree on bit-for-bit when committing to verifiable inference.
 **Audience:** You, if you have ever stared at two correct-looking GPU implementations producing slightly different logits and wanted to scream.
 **Depends on:** [RFC-0003](./RFC-0003-verification.md), [RFC-0008](./RFC-0008-wire-formats.md)
@@ -146,6 +146,67 @@ Why this works: the INT8 × INT8 → INT32 product is exact (no rounding loss);
 the only floating-point rounding occurs at the dequantize/rescale step, which
 is deterministic given the scale values, which are themselves derived
 deterministically from the input.
+
+### 2.1 · Bit-exact per-token scale computation
+
+*Added in v0.4 to close the dynamic-scale race condition raised by the
+multi-persona Round 2 review (verifiable-computation persona).* Without
+the discipline below, two honest multi-threaded implementations can
+compute the same input's per-token scale differing in the last bits —
+e.g., a horizontal SIMD max that reduces in unspecified lane order, or
+a "reciprocal precomputation" that replaces division by `127.0f` with
+multiplication by an FP32-rounded `1/127`. The propagation of that bit
+difference through the subsequent dequantize and the next layer's
+matmul destroys bit-exactness for the entire downstream computation.
+The fix is below the cost of any honest implementation.
+
+For each token activation vector `h ∈ FP32^{d_model}` on the audited
+path:
+
+1. **Absolute-value pass.** Compute `a_i = fabsf(h_i)` for `i = 0..d_model−1`.
+   This is a scalar IEEE-754 operation on each lane; SIMD `vandps`
+   against the sign-mask is equivalent and permitted.
+2. **Max reduction with fixed tree.** Reduce `max(a_0, ..., a_{d_model−1})`
+   using a **left-biased binary tree** over a power-of-two-padded array
+   (padding values are `-∞` so they never win the max, encoded as
+   `0xFF800000` in FP32). Concretely:
+   ```
+   m_0..m_{d_model−1} = a_0..a_{d_model−1}
+   pad to d_pad = next_pow2(d_model) with -∞
+   for level in 0..log2(d_pad)−1:
+       m_i ← fmaxf(m_{2i}, m_{2i+1})    for i = 0..(d_pad/2^{level+1} − 1)
+   max_abs = m_0
+   ```
+   `fmaxf` is the IEEE-754 maximumNumber operation (RFC-0008 §1.3 numeric
+   types). The tree is identical across implementations; the value is
+   identical across implementations.
+3. **Scale by division, not reciprocal.** Compute
+   `scale = max_abs / 127.0f` as a single FP32 divide. **Do not**
+   precompute `inv_127 = 1.0f / 127.0f` and multiply: the precomputed
+   reciprocal is FP32-rounded once and then multiplied, which gives a
+   different last-bit result than the direct divide on roughly half of
+   inputs. The IEEE-754 divide is deterministic and bit-identical
+   across hardware.
+4. **Zero-token sentinel.** If `max_abs == 0.0f` (all-zero activation
+   vector — pathological but possible), set `scale = 1.0f` and emit the
+   zero INT8 vector. This is a single explicit branch; it adds nothing
+   to the security argument but prevents division by zero from
+   producing platform-dependent `NaN`/`Inf` propagation.
+
+The same discipline applies to **any other dynamic-scale computation**
+the recipe relies on (e.g., layer-norm scale denominators, if any
+canonical-path layer uses them). The general rule: any FP32 value
+derived from input data and used as a multiplicative factor downstream
+**must** be computed by a recipe that fixes (a) the reduction tree, (b)
+the operation order, (c) the use of direct operations over precomputed
+inverses.
+
+This discipline costs essentially nothing on modern CPUs (the
+left-biased tree is the default of every standard SIMD horizontal-max
+implementation; the divide-vs-reciprocal choice is a one-instruction
+swap). It is documented here because "essentially nothing" is not zero,
+and the canonical recipe is the only place where the bit-exact contract
+holds.
 
 ### 3 · The fixed accumulation order
 

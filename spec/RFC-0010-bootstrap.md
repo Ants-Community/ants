@@ -1,6 +1,6 @@
 # RFC-0010 — Bootstrap Sequence
 
-**Status:** Draft · v0.2
+**Status:** Draft · v0.3
 **Topic:** What the first peer does when it runs the reference client, and how the network evolves from one attested peer to a self-secured colony.
 **Audience:** You, if you are about to implement the bootstrap of the reference client.
 **Depends on:** [GOVERNANCE.md](../GOVERNANCE.md), [RFC-0001](./RFC-0001-community-economy.md), [RFC-0002](./RFC-0002-semantic-cache.md), [RFC-0003](./RFC-0003-verification.md), [RFC-0004](./RFC-0004-reputation-pouh.md), [RFC-0005](./RFC-0005-identity.md), [RFC-0008](./RFC-0008-wire-formats.md), [RFC-0009](./RFC-0009-canonical-numerics.md)
@@ -483,9 +483,57 @@ the same `slot_index` and `epoch` is committing self-authenticating
 equivocation (the two `prev_sig` values are the proof). The L1 fault
 mechanism applies: the rotating slot is **frozen** — current binding
 stays in force, no further rotation by `prev_peer_id` is admitted —
-until a `TrusteeRevocation` with full witness threshold resolves the
-slot to a clean successor or vacancy. The slot's granted weight
-continues decaying on schedule during the freeze.
+until a `TrusteeRevocation` resolves the slot to a clean successor or
+vacancy. The slot's granted weight continues decaying on schedule
+during the freeze.
+
+#### Escape hatch from the freeze without synchronous coordination
+
+*Added in v0.3 to address the deadlock case raised by the multi-persona
+Round 2 review (applied cryptography persona): trustee compromise +
+key loss + attacker equivocation locks the slot, and the standard
+TrusteeRevocation path requires the remaining trustees to coordinate
+out-of-band during a crisis — across jurisdictions that may not be
+able to act rapidly.*
+
+The standard `TrusteeRevocation` path (§Compromise path) remains
+available. To remove the implicit "synchronous coordination" assumption,
+**post-equivocation revocations may accumulate witness acks
+asynchronously** over an extended window:
+
+- The first remaining trustee to observe the equivocation publishes a
+  `TrusteeRevocation` envelope (no `prev_sig`, reason_code
+  `SUSPECTED_COMPROMISE`) with `witness_acks: []` initially. This
+  envelope is **provisional**: it does not by itself revoke the slot.
+- Other remaining trustees, each on their own clock and in their own
+  jurisdiction, may append a witness ack to the provisional envelope
+  by gossiping their signed `bond_admission_ack`-style addendum to L1
+  at any point within the extended window.
+- The window is **`EMERGENCY_REVOCATION_WINDOW`**, default
+  **30 epochs (≈ 30 days at the nominal 24h epoch)**, calibratable per
+  RFC-0008 §7. The window is longer than the standard
+  `ROTATION_ADMISSION_WINDOW` because the worst case for which this
+  exists is "the global trustees are in 5 jurisdictions, two are on
+  holiday, one is in a country with poor connectivity for two weeks."
+- The envelope becomes **final** the moment its accumulated acks reach
+  `⌈2/3 · (T − 1)⌉`. Finality is observable to anyone replaying L1.
+- If the window expires without enough acks, the provisional envelope
+  expires; the slot remains frozen; any remaining trustee may
+  re-initiate.
+- Acks are themselves non-equivocable: a trustee that signs two
+  conflicting `TrusteeRevocation` provisionals (e.g., one to vacate
+  the slot, one to name a successor) commits its own equivocation
+  fault and is itself frozen until cleaned up. The asynchronous
+  accumulation does not weaken the anti-equivocation discipline.
+
+The mechanism preserves the safety property of the standard path —
+quorum of `⌈2/3 · (T − 1)⌉` of remaining trustees is still required to
+remove a slot from freeze. What changes is the *coordination shape*:
+acks may arrive asynchronously and from any jurisdiction without
+real-time synchronisation. The honest framing: this does not weaken
+the trust assumption, it widens the practical operating envelope of
+the same assumption to match the global, multi-jurisdiction reality
+of the trustee set.
 
 ### What this does not address
 

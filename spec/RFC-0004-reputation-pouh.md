@@ -1,6 +1,6 @@
 # RFC-0004 — Reputation: Two Layers, One Architecture
 
-**Status:** Draft · v0.5
+**Status:** Draft · v0.6
 **Topic:** A reputation system in two layers — a consensus-free CRDT of self-authenticating fault proofs for individual slashing, and a small slow Proof-of-Unique-Hardware (PoUH) chain as ordered witness for pattern-based rules. The chain confirms what has happened. It does not create what happens. v0.3 added **A-as-bond for high-stakes acts**, v0.4 specified the **bond accounting model** and the fork-recovery bond formula. v0.5 closes four BLOCK items surfaced by the multi-persona external review: **G-Set pruning** with late-joiner protocol (N1), **partition recovery** with equivocation slashing and Σ-T fork choice (N2), **selective disclosure of receipts** as a first-class mechanism (N6, fixing previously-broken "RFC-0003-b" cross-references), and a **race-safe bond admission protocol** that does not require synchronised clocks.
 **Audience:** You, if you have read enough blockchain whitepapers to be skeptical of one more — and willing to read another.
 **Depends on:** [RFC-0003](./RFC-0003-verification.md), [RFC-0005](./RFC-0005-identity.md)
@@ -220,27 +220,81 @@ This is the **safe direction of error**: a late joiner who cannot verify
 defaults to treating the subject as slashed (per the L2 chain), not as
 honest.
 
-#### Archive nodes
+#### Archive nodes and the pruning-DoS defence
 
-Long-term retention of pruned proofs is an emergent optional role. Archive
-nodes voluntarily retain the full G-Set history and serve on-demand
-retrieval queries. The economic incentive: small NCS reward per served
-retrieval, paid by the requesting peer (typically a late joiner fetching a
-specific historical proof). Exact reward formula is a calibratable
-parameter (see §What we have not figured out yet).
+Long-term retention of pruned proofs is an emergent role with a
+structural defence against the obvious attack. The defence has three
+layers, added in v0.6 to close the pruning-DoS vector raised by the
+multi-persona Round 2 review (DS persona).
 
-The protocol does not require any specific peer to be an archive node. At
-maturity, a handful of well-resourced peers (commercial operators,
-foundations, academic institutions) are expected to choose the role for
-reputation or institutional reasons, similar to the existence of Bitcoin
-full-history archive nodes today.
+**The attack.** A safe-direction-of-error in §Late-joiner protocol
+treats subjects whose proofs cannot be retrieved as slashed by default.
+An adversary controlling enough of the archive layer can therefore
+withhold *valid* proofs and force late joiners to refuse interaction
+with anyone shown as slashed in *any* L2 Merkle root — including all
+honest peers whose old, minor slashes have been long since
+out-weighted by κ-bound new contribution. Without an archive-availability
+guarantee, the network's onboarding becomes selectively gated by
+whoever runs the archives.
+
+**Layer 1 — minimum-redundancy target with chain monitoring.** Every
+proof committed to an L2 Merkle root has a **target redundancy** of
+`R_ARCHIVE_MIN` distinct holders (default `R_ARCHIVE_MIN = 8`,
+calibratable per RFC-0008 §7). The L2 committee, as part of each epoch
+summary, includes a **rarity flag** for any proof whose observed holder
+count has fallen below the target. The chain becomes the canonical
+record of "which historical proofs are currently under-replicated."
+This requires no consensus on hold-counts (the committee reports its
+*observed* count from gossip; honest peers report their possession
+through routine cache participation); under-counting is the safe
+direction of error and triggers more reward, not less.
+
+**Layer 2 — scaling NCS reward by inverse redundancy.** Archive retrieval
+fees scale by `R_ARCHIVE_MIN / max(1, observed_holders)`. A proof held
+by `R_ARCHIVE_MIN` or more archives earns the baseline reward per
+fetch; a proof held by only 2 archives earns 4× the baseline; a proof
+held by only 1 archive earns 8×. The mechanism is straightforward
+supply-and-demand applied to permanence: the rarer a proof becomes, the
+more valuable it is to retain. A would-be DoS adversary who has
+convinced most archives to drop a proof is *paying* the remaining honest
+archives to keep it.
+
+**Layer 3 — passive late-joiner archiving.** A late joiner that
+successfully fetches and verifies a historical proof (via §Late-joiner
+protocol step 4) **retains it by default** for at least one epoch
+beyond verification, and can choose to retain it indefinitely. New
+peers thus passively contribute to archive redundancy without taking on
+the dedicated archive-node role. The retention default is opt-out, not
+opt-in: only resource-constrained peers (phones, IoT-class) explicitly
+disable it.
+
+**Honest residual.** The three layers raise the cost of pruning-DoS
+from "drop one peer from archive duty" to "convince a quorum of archives
++ outpace the reward-scaling + suppress passive new-joiner archiving."
+That is qualitatively the same posture the rest of the corpus takes
+toward DoS — expensive, not impossible. A coordinated state-actor-scale
+adversary remains capable of impairing access to specific historical
+proofs, which is then handled the same way every other state-actor
+residual is: the credible-fork-threat at the bottom of the stack.
+
+The protocol does not require any specific peer to be a dedicated
+archive node. At maturity, a handful of well-resourced peers
+(commercial operators, foundations, academic institutions) are
+expected to choose the role for reputation or institutional reasons —
+similar to Bitcoin full-history archive nodes today. The minimum-redundancy
+target and the reward scaling create the floor below which the network
+treats archive availability as a problem to fix, not a feature it
+tolerates.
 
 If at some point in the future *no* peer retains a specific historical
-proof, that proof becomes irrecoverable. The L2 chain still attests that
-the slash happened (via the Merkle root), but the underlying evidence is
-lost. This is acceptable: the slash stands; a curious observer cannot
-audit the original evidence. The honest framing: archive-node existence
-is a feature of network health, not a security requirement.
+proof, that proof becomes irrecoverable. The L2 chain still attests
+that the slash happened (via the Merkle root), but the underlying
+evidence is lost. With the three layers above, the conditions for this
+are: the rarity flag was raised, the reward scaling failed to attract
+any peer to retain the proof, and no new joiner happened to fetch it
+during the rarity window. Under nominal network health none of these
+should hold for any specific proof; under network collapse, archive
+availability is the least of the worries.
 
 #### What this preserves
 
@@ -403,20 +457,72 @@ expensive that no rational validator commits it. Partitions resolved by
 *"only one side achieves 2/3 because the other side's validators refuse
 to sign conflicting blocks"* are the **expected** outcome.
 
-#### Fork choice by Σ T
+#### Fork choice by Σ T_eff
 
 When two finalised chains nonetheless emerge — through coordinated malice
 or extreme partition — the protocol's fork choice rule for reconciliation
-is the **cumulative tenure** of the validators that signed each chain's
-blocks. The fork with higher `Σ T` (summed over all validators
-participating in all finalised blocks of the fork, computed against the
-pre-partition agreed state) wins.
+is the **cumulative effective tenure** of the validators that signed each
+chain's blocks. The fork with higher `Σ T_eff` (summed over all
+validators participating in all finalised blocks of the fork, computed
+against the pre-partition agreed state) wins.
 
 This metric is deliberately chosen: `T` is the slow, hard-to-forge
-component of reputation (rate-capped by `κ`), so `Σ T` is a robust proxy
+component of reputation (rate-capped by `κ`), so it is a robust proxy
 for "which fork has the more legitimate validator set." A fork built on
-freshly-rented cloud-TEE Sybils has low `Σ T`; a fork supported by
-established peers has high `Σ T`.
+freshly-rented cloud-TEE Sybils has low effective tenure; a fork
+supported by established peers has high effective tenure.
+
+#### The saturating T → T_eff transform
+
+*Added in v0.6 to address the long-tail centralisation concern raised
+by the multi-persona Round 2 review (DS + econ personas, independently).*
+
+A naïve fork choice on raw `Σ T` is dominated by historical peers in the
+long run: under `κ` rate-capping, a 5-year peer's `T` is roughly 5× a
+1-year peer's, and a 10-year peer's is roughly 10×. In a mature network,
+the founder cohort would retain fork-choice authority indefinitely under
+this metric — "founder weight" rebranded as tenure dominance, in literal
+tension with the §Manifesto reconciliation argument and with the
+δ_genesis sunset of RFC-0010.
+
+The protocol therefore applies a **saturating transform** to `T` *for
+fork-choice purposes only*:
+
+```
+T_eff(T)  =  T_CAP · (1 − exp(−T / T_CAP))
+```
+
+Properties of this transform, all intentional:
+
+- **Linear regime for young peers.** When `T ≪ T_CAP`,
+  `T_eff(T) ≈ T` (to first order). Young honest peers retain full
+  fork-choice weight in proportion to their work — the cap does not
+  punish recent contribution.
+- **Saturating regime for tenured peers.** When `T → ∞`,
+  `T_eff(T) → T_CAP`. A peer with 10× the tenure of another contributes
+  at most `T_CAP` worth of fork-choice weight, not 10× the other's
+  weight. The metric becomes a count of "established peers" with
+  diminishing returns above the cap, not a sum of raw tenure.
+- **Monotone, smooth, deterministic.** Two honest implementations
+  compute the same `T_eff` from the same `T`. No threshold cliff (the
+  transform is C∞), so an attacker cannot game the cap by sitting
+  arbitrarily close to it.
+
+The cap applies **only to the fork-choice metric**. `T` itself, uncapped,
+continues to govern verifier-set eligibility (§Tenure), bond capacity
+(§Bonds), persistence (a peer's standing for ordinary serving and
+signalling), and the slow-decay floor below which a peer is treated as
+newcomer. Capping `T` for those would punish exactly the long-term
+honest contribution the spine is designed to reward. The fork-choice
+metric is the only place where the *relative weight* of an arbitrarily
+old peer needs bounding, because fork-choice is the only place where
+one peer's weight relative to another determines the network's path.
+
+`T_CAP` is **calibratable** (added to RFC-0008 §7 as
+`T_FORK_CHOICE_CAP`). A reasonable starting point is the tenure
+accumulable in roughly two years of sustained κ-rate-cap-bound
+contribution; the precise value is a b2-class measurement once `κ` is
+fixed.
 
 The losing fork's blocks after the partition cut are **reverted** — they
 become "uncle blocks" in the reconciled history. The validators of the
@@ -428,11 +534,16 @@ epochs.
 
 #### Social-Schelling fallback
 
-If both forks have `Σ T > θ · Σ T_total` — the partition was
+If both forks have `Σ T_eff > θ · Σ T_eff,total` — the partition was
 fundamentally balanced and both sides have legitimate majority validator
-support — fork choice by `Σ T` is ambiguous and the protocol explicitly
-hands recovery to the social layer per §Fork-recovery and the
-credible-fork-threat.
+support — fork choice by `Σ T_eff` is ambiguous and the protocol
+explicitly hands recovery to the social layer per §Fork-recovery and
+the credible-fork-threat. The cap makes this fallback *more* likely to
+trigger in practice, not less: with raw `Σ T`, a partition split
+imbalanced in age (one side has the founder cohort, the other has the
+recent cohort) might appear unbalanced enough for automatic
+reconciliation when in fact the network is socially split. `Σ T_eff`
+correctly reports that case as balanced and hands it off.
 
 This is the same social-Schelling floor the architecture has at every
 layer. It is the irreducible coordination assumption. Naming it
@@ -447,10 +558,10 @@ The "chain is witness, not judge" property of §Layer 2 is preserved.
 Partition recovery does not require the chain to *create* slashes — the
 equivocation proofs are self-authenticating L1 fault proofs that exist
 regardless of which fork wins. The chain's role in partition recovery is
-to provide `Σ T` accounting and the canonical history once reconciliation
-happens. The L1 layer continues to operate on both sides during the
-partition, accumulating proofs that will be reconciled when the partition
-heals.
+to provide `Σ T_eff` accounting and the canonical history once
+reconciliation happens. The L1 layer continues to operate on both sides
+during the partition, accumulating proofs that will be reconciled when
+the partition heals.
 
 ---
 
