@@ -2,7 +2,7 @@
 
 > An open protocol for collective intelligence.
 
-[Manifesto](./MANIFESTO.md) · [Issues](https://github.com/Ants-Community/ants/issues) · [Chat Space](https://matrix.to/#/#ants-community:matrix.org) · [ants.community](https://ants.community)
+[Manifesto](./MANIFESTO.md) · [Governance](./GOVERNANCE.md) · [Governance](./GOVERNANCE.md) · [Issues](https://github.com/Ants-Community/ants/issues) · [Chat Space](https://matrix.to/#/#ants-community:matrix.org) · [ants.community](https://ants.community)
 
 ---
 
@@ -22,7 +22,7 @@ Today, frontier artificial intelligence lives inside a handful of companies, in 
 
 ANTS is the proposition that intelligence, like the internet itself, can be a public protocol rather than a private product. That a colony of millions of imperfect machines, coordinated by good rules, can produce something no single machine could — including the biggest ones.
 
-Read the [Manifesto](./MANIFESTO.md) for the longer answer.
+Read the [Manifesto](./MANIFESTO.md) · [Governance](./GOVERNANCE.md) · [Governance](./GOVERNANCE.md) for the longer answer.
 
 ## Status
 
@@ -57,7 +57,7 @@ When the specification stabilises, working repositories for the reference node, 
 ## License
 
 - Code and specifications in this repository are licensed under [Apache License 2.0](./LICENSE).
-- The [Manifesto](./MANIFESTO.md) is released into the public domain under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/), as declared in its footer.
+- The [Manifesto](./MANIFESTO.md) · [Governance](./GOVERNANCE.md) · [Governance](./GOVERNANCE.md) is released into the public domain under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/), as declared in its footer.
 - Future reference implementations of network-facing services will be released under [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.html) in dedicated repositories, to prevent closed re-hosting of the network.
 
 ## A note on what ANTS is not
