@@ -1,6 +1,6 @@
 # RFC-0002 — Semantic Cache Layer
 
-**Status:** Draft · v0.1
+**Status:** Draft · v0.2
 **Topic:** The distributed memory of the network. How peers retain, address, and reuse every honest answer the colony has ever given.
 **Audience:** You, if you are willing to disagree in writing.
 
@@ -84,6 +84,30 @@ A few choices in this schema are worth flagging.
 
 ---
 
+### What the `response` field contains
+
+*Clarified in v0.2.* The `response` field stores **the canonical-recipe
+output `Y_canon`** as specified in
+[RFC-0009 v0.2](./RFC-0009-canonical-numerics.md) §"What the network
+commits to" — not whatever fast-path output the producer's internal
+implementation may have computed alongside.
+
+Every cache retrieval therefore returns byte-identical content for the
+same entry regardless of which peer serves it. This is what makes Tier 2
+audits of cache hits trivial: the auditor recomputes the canonical recipe
+and matches against the cached `response` byte-for-byte, with the
+honest-noise floor `σ` effectively zero under the integer-canonical
+recipe.
+
+Producers whose serving implementation produces `Y_canon`-equivalent
+outputs natively pay no verifiability tax. Producers running a different
+fast path must compute `Y_canon` separately, doubling their per-served
+compute cost. The economic pressure toward canonical-recipe-as-production
+is the convergence mechanism described in RFC-0009 v0.2; this RFC
+inherits the consequence — every cache entry is canonical.
+
+---
+
 ## The canonical embedding model
 
 Coordination matters. If every peer used a different embedding model, queries and cached entries would live in incompatible vector spaces and the lookup would be impossible.
@@ -97,6 +121,102 @@ Future versions (`ants-embed-v2`, etc.) will be introduced when one of the follo
 A version transition is a coordinated event lasting six to twelve months: peers begin serving both `v1` and `v2` embeddings in parallel; cache entries get gradually re-embedded into `v2` by background workers; the network monitors lookup quality on both; `v1` is deprecated when `v2` adoption exceeds 95% by traffic. There is no flag day.
 
 The choice of canonical model is the single most consequential governance decision the cache layer makes. It is therefore made through the full RFC process, not by the BDFL alone, even in the v0.x period.
+
+---
+
+## Governance of the canonical embedding model
+
+*Added in v0.2 to close B5 from the pre-implementation criticality
+review.*
+
+The canonical embedding model is the single most consequential governance
+decision the cache layer makes — v0.1 of this RFC said so but did not
+specify the process. It is the one protocol-level coordination object
+that every peer must agree on bit-for-bit, a property no other component
+of ANTS requires. It therefore warrants governance rules above the
+standard amendment process.
+
+### Proposal
+
+A proposal to introduce a new canonical embedding model (e.g.,
+`ants-embed-v2`) must include, at minimum:
+
+- The exact model and weights, identified by BLAKE3 hash per
+  [RFC-0008](./RFC-0008-wire-formats.md) §5.
+- A perplexity comparison against the current canonical model on a
+  public benchmark set covering at least ten languages and eight
+  domains.
+- A vulnerability analysis: known embedding-poisoning vectors,
+  robustness against adversarial inputs, and a comparison to the
+  current model's published weaknesses.
+- A licensing analysis: open-weight license confirmation, transfer
+  rights, any encumbrances.
+- An estimate of compute cost for cross-version re-embedding of
+  existing cache entries.
+
+A proposal that omits any of these is not ready for review.
+
+### Review
+
+The proposal undergoes a public comment period of **at least eight
+weeks** — substantially longer than the one-to-three weeks of ordinary
+RFC amendments. During the comment period:
+
+- Any peer may file objections, counter-evidence, or proposed
+  alternatives.
+- Subsystem maintainers for verification, identity, and cache layers
+  each provide a written assessment.
+- Independent benchmarks against the current model are encouraged from
+  any contributor.
+
+The eight-week minimum is not negotiable downward. It can be extended
+if the proposal is contested or if additional evidence is requested by
+maintainers.
+
+### Decision
+
+- **During the BDFL period (v0.x)**, the BDFL makes the final merge
+  decision after the comment period. The decision is recorded with
+  explicit reasoning in [`spec/CHANGELOG.md`](./CHANGELOG.md).
+- **After v1.0**, the Technical Steering Committee votes; a **two-thirds
+  majority** is required. This is higher than the standard
+  simple-majority threshold for routine matters in
+  [GOVERNANCE.md](../GOVERNANCE.md), reflecting the consequential
+  nature of this decision.
+
+### Transition
+
+Once a new model is accepted:
+
+- A coordinated transition period of **at least six and at most twelve
+  months** begins. During this period, peers serve both `v1` and `v2`
+  embeddings in parallel, and the DHT routes lookups in both spaces.
+- Background workers (incentivised by NCS) re-embed existing cache
+  entries from v1 to v2. The producer of the original entry receives
+  no additional royalty from the re-embedding (the original work was
+  already paid).
+- The old model is deprecated when v2 adoption exceeds 95% by traffic,
+  OR when the comment period plus transition period reaches twelve
+  months, whichever comes first.
+
+### Right to fork
+
+Throughout the proposal, comment, decision, and transition periods,
+**any peer or coalition may fork the protocol**. The forked protocol
+may adopt a different canonical embedding model or remain on the old
+one. The protocol's permissionless property applies here as
+everywhere: dissent in code is always a legitimate response.
+
+### What this does not eliminate
+
+The canonical embedding model remains a single point of governance.
+The above process **bounds the abuse** of that authority but does not
+**dissolve** it. The honest framing: this is one of the few places in
+ANTS where the protocol genuinely depends on a coordinated choice, and
+the governance process is the only defence against that choice being
+made badly. The cost is the eight-week minimum review and the
+two-thirds post-v1.0 threshold; the value is that the choice is made
+in public, under scrutiny, with the right to dissent always available.
 
 ---
 

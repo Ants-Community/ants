@@ -1,6 +1,6 @@
 # RFC-0008 — Wire Formats, Crypto Primitives, and Reference Constants
 
-**Status:** Reference · v0.1 (living standard)
+**Status:** Reference · v0.2 (living standard)
 **Topic:** The concrete byte-level choices the protocol makes once and refers to from everywhere else.
 **Audience:** You, if you are about to write code.
 **Depends on:** all design RFCs (this document is the implementation glue between them).
@@ -143,6 +143,10 @@ Ed25519 is chosen because: it is deterministic (no nonce reuse risk), fast,
 small (64-byte signatures, 32-byte keys), simple to implement correctly, and
 nearly universally supported.
 
+Tier 3 verification committees (RFC-0003) use Ed25519 individual signatures —
+not BLS aggregation. Tier 3 committee size is small (N=3–7), so aggregation
+brings no meaningful saving and Ed25519's lower per-verify cost dominates.
+
 ### 3.2 · TEE attestation chains: ECDSA-P256 (vendor-determined)
 
 TEE vendors sign attestation quotes with **ECDSA over NIST P-256** in most
@@ -162,6 +166,18 @@ BLS signatures aggregate: 64 signatures over the same block hash become *one*
 signature, verifiable in roughly the time of two ordinary ECDSA verifications.
 The chain header carries the aggregate signature plus a bitmap of which
 committee members signed.
+
+**Bootstrap K transition (added in v0.2).** At bootstrap, committee size K is
+small (typically 5–16). At small K the aggregation benefit of BLS over plain
+Ed25519 multi-signature is negligible: 5 Ed25519 signatures occupy 320 bytes
+(comparable to one BLS signature plus its bitmap), and BLS per-verify is
+~10ms vs ~0.05ms for Ed25519. The protocol therefore transitions signature
+scheme based on K: at **K ≤ 16** committee members sign the block hash
+individually with Ed25519 (the block header carries K Ed25519 signatures plus
+the member-ID list); at **K > 16** BLS12-381 aggregate signatures apply as
+specified above. The K=16 threshold is calibrated so that BLS aggregation
+provides ≥3× size and verification-cost reduction over Ed25519 multi-sig at
+the crossover. It is **Calibratable** per §7.
 
 ### 3.4 · One key per role
 
@@ -200,6 +216,10 @@ This document reserves the following context strings:
 | `"ants-v1-shard-key"` | computing the LSH shard key from an embedding | RFC-0002 §DHT routing |
 | `"ants-v1-bls-derive"` | deriving the BLS key from Ed25519 | §3.4 above |
 | `"ants-v1-fault-merkle"` | Merkle leaf hashing for fault proofs | RFC-0004 §Layer 1 |
+| `"ants-v1-logit-trace-leaf"` | per-position logit-distribution leaf hashing | RFC-0003 §commit-at-send |
+| `"ants-v1-logit-trace-root"` | root commitment over the full logit trace | RFC-0003 §commit-at-send |
+| `"ants-v1-cache-entry-hash"` | content addressing of `Y_canon` in cache entries | RFC-0002 §"What the response field contains" |
+| `"ants-v1-vrf-seed-degraded"` | fallback VRF seed when drand is unavailable | §4.2 below |
 
 New contexts are added to this table via amendment to this RFC, never
 hard-coded ad-hoc. The domain-separation discipline is non-negotiable: re-using
@@ -223,6 +243,41 @@ VRF seed is `BLAKE3.derive_key("ants-v1-vrf-seed", previous_block_hash ‖
 block_height_be64 ‖ drand_round_value)`. drand's threshold-BLS construction
 makes the value unforgeable by any party with less than 2/3 of the drand
 network — substantially stronger than what ANTS can do on its own at bootstrap.
+
+### 4.3 · Drand failover (added in v0.2)
+
+drand outages have happened and will happen. Rather than stall the chain
+(RFC-0004's L2 cannot finalise blocks if proposers cannot compute a VRF
+seed), the protocol specifies a degraded-seed fallback:
+
+- The proposer of block *N* attempts to fetch the drand round whose
+  published time is closest to but not after the block's proposal
+  timestamp.
+- If no drand round value is available within a **30-second timeout**,
+  the proposer constructs the VRF seed from
+  `BLAKE3.derive_key("ants-v1-vrf-seed-degraded", previous_block_hash ‖
+  block_height_be64)` alone, and sets `degraded_seed: true` in the block
+  header.
+- A block with `degraded_seed: true` finalises normally (committee signs
+  per §3.3) but is *visibly flagged* in the chain record. Any peer
+  reading the chain can see which blocks used degraded entropy.
+- The 30-second timeout is a **hard floor**: a proposer that submits a
+  degraded-seed block without honestly waiting that long is committing
+  an attributable fault.
+- Recovery is automatic: as soon as drand resumes, the next block's
+  proposer uses the live drand value normally. Degraded-seed blocks
+  remain in the chain history as a record of the outage.
+
+The security implication is real and bounded: during drand outages, the
+next committee is predictable to an attacker who can predict
+`BLAKE3(previous_block ‖ height)`. The previous-block-hash is
+unpredictable to an attacker if at least one honest peer signed the
+previous block — the standing assumption. An attacker with 1/3 of the
+*previous* committee can grind toward favourable next-committees during
+drand outages by manipulating their share of the previous block's
+content. This is a partial security regression during outages, bounded
+by their duration. The honest framing: drand outages are operationally
+costly even though they do not stall the chain.
 
 ---
 
@@ -303,6 +358,7 @@ changes within a major version are permitted.
 | `CACHE_REPLICATION_FACTOR` | RFC-0002 | 3 | C |
 | `SIMILARITY_THRESHOLD` | RFC-0002 | 0.92 cosine | C |
 | `CHOKE_WINDOW` | RFC-0001 | 20 minutes | C |
+| `CHOKE_LOOP_INTERVAL` | RFC-0001 | 10 seconds | C |
 | `OPTIMISTIC_UNCHOKE_RATIO` | RFC-0001 | 12.5% (1/8 slots) | C |
 | `TIER1_SAMPLING_RATE_p` | RFC-0003 | 0.03 (default; derived from b1) | C |
 | `TIER3_COMMITTEE_SIZE_N` | RFC-0003 | 3 (configurable 3–7) | C |
@@ -311,8 +367,14 @@ changes within a major version are permitted.
 | `KAPPA_TENURE_RATE_CAP_κ` | RFC-0004 | TBD on b2 | C |
 | `DELTA_A_ACTIVE_DECAY` | RFC-0004 | TBD on b2 (minutes scale) | C |
 | `DELTA_T_TENURE_DECAY` | RFC-0004 | TBD on b2 (months scale) | C |
-| `MU_0_HONEST_NOISE_FLOOR` | RFC-0003 | TBD on b2 | C |
-| `BOND_DISPUTE_WINDOW` | RFC-0004 v0.3 | 7 days | C |
+| `MU_0_INT8_CANONICAL` | RFC-0003 / RFC-0009 v0.2 | ≈ 0 (q24 quantization floor) | C |
+| `MU_0_FP16_CANONICAL` | RFC-0003 / RFC-0009 v0.2 | TBD on b2 (expected 10⁻⁵ to 10⁻⁴) | C |
+| `BOND_DISPUTE_WINDOW` | RFC-0004 v0.3 | 7 days (one week) | C |
+| `POUH_BOND_C_COMMITTEE` | RFC-0004 v0.3 §Bonds | TBD on b2 (multiplier per pending finding) | C |
+| `BOND_RISK_MULT_CACHE_WRITE` | RFC-0004 v0.3 §Bonds | TBD on b2 (multiplier on est. lifetime royalty) | C |
+| `BOND_RISK_MULT_SETTLEMENT` | RFC-0004 v0.3 §Bonds | TBD on b2 (multiplier on settlement value) | C |
+| `BLS_TRANSITION_K` | §3.3 above | 16 (Ed25519 ≤ K, BLS > K) | C |
+| `DRAND_TIMEOUT` | §4.3 above | 30 seconds | C |
 | `POUH_COMMITTEE_SIZE_K` | RFC-0004 | 64 | C (bootstrap-scales) |
 | `POUH_BLOCK_TIME` | RFC-0004 | 30 seconds | C |
 | `POUH_FINALITY_THRESHOLD` | RFC-0004 | ⌈2K/3⌉ | P |

@@ -1,6 +1,6 @@
 # RFC-0009 — Canonical Numerics for Verifiable Inference
 
-**Status:** Draft · v0.1 (early — substantial revision expected once the reference kernel library exists and the b2 testnet measures its honest-noise floor)
+**Status:** Draft · v0.2 (early — substantial revision expected once the reference kernel library exists and the b2 testnet measures its honest-noise floor)
 **Topic:** The numerical recipe that two honest peers, on different hardware, must agree on bit-for-bit when committing to verifiable inference.
 **Audience:** You, if you have ever stared at two correct-looking GPU implementations producing slightly different logits and wanted to scream.
 **Depends on:** [RFC-0003](./RFC-0003-verification.md), [RFC-0008](./RFC-0008-wire-formats.md)
@@ -64,6 +64,51 @@ heterogeneous hardware. RFC-0003's verification, naively applied, cannot tell
 this noise from quantization fraud — both are "small perturbations of the
 correct computation" by the same magnitude. That is why a canonical recipe is
 needed.
+
+---
+
+## What the network commits to (and the producer's economic choice)
+
+*Added in v0.2 to close a silent ambiguity in v0.1.*
+
+A producer running an inference computes an output. **The output that becomes
+the protocol's record — the value committed in the producer's commit-at-send
+object ([RFC-0003](./RFC-0003-verification.md)), stored in the cache entry's
+`response` field ([RFC-0002](./RFC-0002-semantic-cache.md)), and returned to
+the requesting peer as the served answer — is the canonical-recipe output
+`Y_canon`.** Not the output of whatever kernel the producer found cheapest;
+not a half-precision tokenisation; not `Y_fast`. `Y_canon`.
+
+A producer is free to use any internal implementation for inference. If that
+implementation produces `Y_canon`-equivalent outputs natively, the producer
+pays no verifiability tax — the same compute serves both the user and the
+protocol's verification path. If the implementation produces a different
+output, the producer must *additionally* compute `Y_canon` for the
+commitment and the served record; the user-facing fast path is the
+producer's internal optimisation; the protocol-visible record is always
+canonical. This costs 2–4× compute over the no-verification baseline,
+paid by the producer.
+
+The economic implication is clean. Producers face a binary choice: run the
+canonical recipe as the production serving path (zero tax), or run a
+different fast path and pay the tax for the difference. In a competitive
+NCS economy, the no-tax option dominates over time, and the network
+converges on the canonical recipe as the universal serving recipe.
+
+This convergence is **a feature, not a bug**. It makes every cache
+retrieval return byte-identical content regardless of which peer served
+it. It makes Tier 2 audits of cache hits trivial — the auditor recomputes
+the canonical recipe and matches against the cached `response`
+byte-for-byte. It makes the network's effective compute footprint
+predictable rather than depending on whichever fast-path tricks each
+producer happens to be running.
+
+The previous draft of this RFC said "the producer serves whatever it
+prefers" alongside the commit-to-canonical requirement. That phrasing
+created a silent question — *what does the user receive when fast and
+canonical diverge?* — that this section closes. The answer is `Y_canon`.
+The producer's freedom is in *how* it produces `Y_canon`, not in *what
+output reaches the network*.
 
 ---
 

@@ -323,6 +323,85 @@ not claim to close it. It claims to narrow it.
 
 ---
 
+## RFC-0009 v0.1 → v0.2 + RFC-0002 v0.1 → v0.2 · 2026-05-20 · Y_canon caching + embedding governance
+
+Joint amendment addressing three open BLOCK items from the post-0008/0009
+criticality re-check: B-NEW-1 (producer compute economics), B-NEW-2 (cache
+content Y_canon vs Y_fast), and B5 (embedding model upgrade governance from
+the original pre-implementation review).
+
+### B-NEW-1 + B-NEW-2 — RFC-0009 v0.2 + RFC-0002 v0.2
+
+**Was:** RFC-0009 v0.1 said "the producer serves whatever it prefers … and
+additionally commits to the canonical output." This was ambiguous about
+what the user receives and what gets cached. Implicit consequence:
+producers paying 2× compute on every served query (not the +6%
+network-overhead figure RFC-0009 v0.1 cited at the producer level), and a
+silent question of whether the cache stores `Y_fast` (user-visible but
+unverifiable) or `Y_canon` (verifiable but divergent from what the user
+got).
+
+**Now:** the canonical recipe is the unified output. What the producer
+commits to, what the cache stores, what the user receives — all `Y_canon`.
+The producer's internal serving path is an implementation choice: if it
+produces `Y_canon`-equivalent outputs natively, the 2× tax is zero; if
+not, the tax applies but is the producer's economic decision.
+
+The cache property that every retrieval returns bit-identical bytes for
+the same entry is a *strength*, not a bug. It makes Tier 2 audits of cache
+hits trivial — under the integer-canonical recipe, σ is essentially zero
+and any discrepancy is a slash. And it forces network-wide convergence
+on the canonical recipe as the production serving path, which is the
+intended outcome of the whole verifiable-inference layer.
+
+**Why:** removes the silent ambiguity about user/cache divergence; makes
+the producer economy explicit and binary (zero tax or full tax, no
+hidden middle); gives Tier 2 audits a clean property to rely on. The
+v0.1 framing was technically defensible but operationally underspecified.
+
+### B5 — RFC-0002 v0.2 §Governance of the canonical embedding model
+
+**Was:** RFC-0002 v0.1 named the canonical embedding model as "the
+single most consequential governance decision the cache layer makes"
+but did not specify the process. The flagship governance object of the
+protocol's only true coordination point was left as a hand-wave.
+
+**Now:** a new §Governance of the canonical embedding model specifies
+the proposal/review/decision/transition flow:
+
+- **Proposal**: minimum-content requirements (model hash per RFC-0008,
+  perplexity comparison on a multi-language multi-domain benchmark,
+  vulnerability analysis, licensing analysis, re-embedding compute
+  estimate).
+- **Review**: minimum eight-week public comment period (vs the standard
+  one-to-three for ordinary amendments), written assessments from
+  verification/identity/cache subsystem maintainers.
+- **Decision**: BDFL during v0.x; two-thirds TSC majority post-v1.0
+  (higher than the simple-majority for routine matters).
+- **Transition**: six-to-twelve month coordinated dual-running, with
+  background re-embedding incentivised by NCS.
+- **Right to fork** throughout — the protocol's permissionless property
+  applied to the most consequential governance act.
+
+**Why:** the canonical embedding model is a single point of
+coordination that the protocol genuinely depends on. The governance
+process does not dissolve that dependency — it bounds the *abuse* of
+it. The amendment makes the process explicit and public, so it cannot
+be smuggled into by anyone, BDFL included. This is also the first time
+the corpus distinguishes between "ordinary amendment" and "elevated
+amendment" governance — a template for any future protocol-coordination
+decisions of similar scope.
+
+### What this does not close
+
+Four BLOCK items from the pre-implementation criticality review remain
+open after this amendment: B2 (bond accounting model), B4 (bootstrap
+sequence), B6 (fork-recovery bond circularity), and the cross-RFC
+nits/H-NEW items from the post-0008/0009 check. They are addressed in
+Amendments B, C, and D following this one.
+
+---
+
 ## RFC-0008 + RFC-0009 · added · 2026-05-20 · Technical references for implementation
 
 Two new RFCs added together, in service of the same goal: close the
@@ -439,5 +518,80 @@ A fresh corpus-wide criticality re-check is the natural next step after
 these land — to surface incompatibilities that the new primitives may
 have introduced between what the design RFCs *assume* and what the
 references *actually specify*.
+
+---
+
+## RFC-0008 · v0.1 → v0.2 · 2026-05-20 · Context strings, drand failover, BLS/Ed25519 transition, constants
+
+A focused amendment closing the BLOCK and HARD items from the post-0008/0009
+criticality re-check that this document is responsible for.
+
+### B-NEW-3 — Logit-trace Merkle context strings
+
+**Was:** §4.1's reserved-context table covered fault proofs
+(`ants-v1-fault-merkle`) but not the commit-at-send Merkle that RFC-0003
+§commit-at-send specifies. An implementer of RFC-0003 had `leaf_i =
+H(dist_i ‖ i)` from the spec but no derive_key context to plug into BLAKE3.
+
+**Now:** §4.1 adds `ants-v1-logit-trace-leaf` and `ants-v1-logit-trace-root`
+contexts, plus `ants-v1-cache-entry-hash` for `Y_canon` content addressing
+in RFC-0002 v0.2, plus `ants-v1-vrf-seed-degraded` for the fallback below.
+
+### B-NEW-4 — Drand failover
+
+**Was:** §4.2 bound the L2 VRF seed to drand. Real drand outages would
+stall the chain entirely.
+
+**Now:** new §4.3 specifies a degraded-seed fallback. 30-second timeout to
+fetch the drand round; on timeout the proposer constructs the seed from
+`BLAKE3.derive_key("ants-v1-vrf-seed-degraded", prev_block_hash ‖ height)`
+alone and sets `degraded_seed: true` in the block header. Blocks finalise
+normally; the degraded-seed flag is visible in chain history forever.
+
+**Honest residual:** during outages, an attacker with 1/3 of the previous
+committee can grind toward favourable next-committees. Security regression
+bounded by outage duration. The fallback prevents stall, not all attacks —
+the honest framing of what we can and cannot promise.
+
+### B-NEW-5 — BLS/Ed25519 transition at bootstrap K
+
+**Was:** §3.3 mandated BLS12-381 aggregation for all PoUH committee
+signatures regardless of K. At bootstrap K=5–16 this is wasteful: BLS
+per-verify is ~10ms vs ~0.05ms for Ed25519, and aggregation savings are
+negligible for small K.
+
+**Now:** §3.3 transitions based on K. At **K ≤ 16** committee members sign
+individually with Ed25519 (block header carries K Ed25519 sigs + member
+IDs). At **K > 16** BLS aggregate signatures apply as before. The K=16
+threshold is calibrated for ≥3× savings at crossover and is itself
+calibratable (`BLS_TRANSITION_K` in §7).
+
+### H-NEW-1 — μ_0 recipe-dependent
+
+**Was:** §7 had a single `MU_0_HONEST_NOISE_FLOOR` constant marked "TBD on
+b2". RFC-0009 v0.1 implied μ_0 differs by recipe (≈ 0 for INT8 canonical,
+~10⁻⁵–10⁻⁴ for FP16 fallback).
+
+**Now:** §7 splits into `MU_0_INT8_CANONICAL` (≈ 0, the q24 quantisation
+floor) and `MU_0_FP16_CANONICAL` (TBD on b2). Implementers no longer
+conflate the two regimes.
+
+### Cross-RFC consistency nits
+
+§3.1 now explicitly says Tier 3 verification committees (RFC-0003, N=3–7)
+use Ed25519 individual signatures, not BLS. §7 adds: `CHOKE_LOOP_INTERVAL`
+(10s from RFC-0001, previously missing); bond formula multipliers
+(`POUH_BOND_C_COMMITTEE`, `BOND_RISK_MULT_CACHE_WRITE`,
+`BOND_RISK_MULT_SETTLEMENT`, all TBD on b2 — referenced by RFC-0004 v0.3
+§Bonds); `BLS_TRANSITION_K` (16); `DRAND_TIMEOUT` (30s).
+`BOND_DISPUTE_WINDOW` is reaffirmed at 7 days (one week) for consistency
+with RFC-0004 v0.3's "default starting point: one week" phrasing.
+
+### What this does not close
+
+Three BLOCK items remain open after this amendment: B2 (bond accounting
+model — how A is measured, frozen, decayed during bond hold), B4
+(bootstrap sequence), B6 (fork-recovery bond circularity). They are
+addressed in Amendments C and D following this one.
 
 ---

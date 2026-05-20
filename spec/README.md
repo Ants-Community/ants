@@ -7,14 +7,14 @@ The protocol is structured as a stack of layers. Reading order matches dependenc
 | Number | Topic | Status | Depends on |
 |--------|-------|--------|------------|
 | [RFC-0001](./RFC-0001-community-economy.md) | Community Layer Economics — barter, the local ledger, choke/unchoke, the specialist credit problem | Draft v0.3 | RFC-0002, RFC-0006 |
-| [RFC-0002](./RFC-0002-semantic-cache.md) | Semantic Cache Layer — the distributed memory of the network; foundational | Draft v0.1 | — |
+| [RFC-0002](./RFC-0002-semantic-cache.md) | Semantic Cache Layer — distributed memory; canonical embedding model governance | Draft v0.2 | RFC-0008, RFC-0009 |
 | [RFC-0003](./RFC-0003-verification.md) | Verification — three tiers, unified by commit-at-send + anytime-valid e-process; closed-form deterrence threshold | Draft v0.2 | RFC-0001, RFC-0002, RFC-0004, RFC-0005 |
 | [RFC-0004](./RFC-0004-reputation-pouh.md) | Reputation — consensus-free CRDT for slashing + PoUH chain as ordered witness + A-as-bond for high-stakes acts | Draft v0.3 | RFC-0003, RFC-0005 |
 | [RFC-0005](./RFC-0005-identity.md) | Identity — hardware attestation, multi-vendor TEE, Sybil economics | Draft v0.1 (early) | — |
 | [RFC-0006](./RFC-0006-payment-terms.md) | Payment Terms & Economic Pluralism — how multiple economies coexist | Draft v0.1 (early) | RFC-0001 |
 | RFC-0007 | Post-v1.0 Governance — TSC mechanics, transition from BDFL | Planned | [GOVERNANCE.md](../GOVERNANCE.md) |
-| [RFC-0008](./RFC-0008-wire-formats.md) | Wire Formats, Crypto Primitives, Reference Constants — the implementation glue | Reference v0.1 | — |
-| [RFC-0009](./RFC-0009-canonical-numerics.md) | Canonical Numerics for Verifiable Inference — INT8-GPTQ default, FP16 fallback | Draft v0.1 (early) | RFC-0003, RFC-0008 |
+| [RFC-0008](./RFC-0008-wire-formats.md) | Wire Formats, Crypto Primitives, Reference Constants — the implementation glue; drand failover, BLS/Ed25519 K-transition | Reference v0.2 | — |
+| [RFC-0009](./RFC-0009-canonical-numerics.md) | Canonical Numerics for Verifiable Inference — INT8-GPTQ default + FP16 fallback; Y_canon unifies serving/caching | Draft v0.2 (early) | RFC-0002, RFC-0003, RFC-0008 |
 
 ## Status legend
 
