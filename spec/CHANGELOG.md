@@ -48,3 +48,201 @@ architecture.** This closes the endogeneity RFC-0002 flagged; it does not close 
 patient single-decisive-act residual.
 
 ---
+
+## Architectural pivot · corpus v0.1 → v0.2 · 2026-05-20
+
+A corpus-level restructure with several pieces. Recording it here because it is
+exactly the kind of design-changing amendment RFC-0001's own process prescribes a
+CHANGELOG entry for, and the pivot commit landed without one — a process gap this
+entry closes.
+
+The pivot has six pieces. The first three are structural — the cache, the economic
+split, the renumbering. The last three are substantive design choices in
+individual RFCs. The animating principle, applied to all six: where v0.1 had
+derivations and proofs, those survive as the technical mechanism beneath a new
+consumer-facing surface. No prior result is discarded silently. Where a prior
+result is rejected, it is rejected by argument, here.
+
+### 1 · RFC-0002 Semantic Cache · new layer
+
+**Was:** no cache layer in the corpus.
+
+**Now:** RFC-0002 (Semantic Cache) introduced as a foundational layer — a
+distributed content-addressable store keyed by prompt embedding. Every honest
+answer the network has given lives there, signed by its producer, retrievable by
+similarity.
+
+**Why:** The deepest economic critique of the v0.1 corpus identified a structural
+pathology in pure barter: specialists whose expertise is rare and whose demands
+are modest accumulate unspendable credit, because asymmetric demand cannot be
+settled bilaterally. The cache resolves this directly: a high-quality answer
+becomes durable yield rather than a one-time payment, paid in fractional NCS to
+the original producer on every subsequent retrieval. It is the correct response to
+the real problem, and it does so without introducing money, tokens, or central
+coordination.
+
+### 2 · RFC-0001 split into Community Economics + RFC-0006 Payment Terms · v0.2 → v0.3
+
+**Was:** a single RFC-0001 (Barter) implying barter was the protocol's only
+economy.
+
+**Now:** RFC-0001 (Community Layer Economics, v0.3) specifies barter for the
+community population. RFC-0006 (Payment Terms) specifies the metadata field by
+which any peer declares its economic terms — barter, fiat, subscription, gift, or
+custom — and the rules for coexistence. Multiple economies share the transport
+layer, the cache, and the identity layer; they are isolated economically and
+interoperable everywhere else.
+
+**Why:** Another v0.1 critique flagged that "no money at the protocol layer"
+combined with "cloud providers can sell access on top" silently recreates the
+centralization the manifesto refuses, one layer up. The HTTP analogy applies: HTTP
+does not know what payment is, and that neutrality is why it carries every
+economy. The protocol declares no economy; populations declare their own; the
+foundation captures none of them.
+
+### 3 · RFC renumbering
+
+**Was:** RFCs 0001–0004 covered Barter / Verification / Reputation / Identity.
+
+**Now:** RFCs 0001–0006 cover Community Economics / Semantic Cache / Verification
+/ Reputation / Identity / Payment Terms. RFC-0007 (Post-v1.0 Governance) is
+reserved.
+
+**Why:** the cache becomes architectural peer to the economy, not a sub-component.
+Payment Terms peer to the economic layer rather than nested in it. Numerical
+contiguity is a minor cost worth paying for structural clarity. The old files
+under the prior numbering have been kept temporarily for diff and are scheduled
+for removal in a follow-up.
+
+### 4 · RFC-0003 Verification · v0.1(early) → v0.2 · marriage of tier framing and scheme (C)
+
+**Was (v0.1 early):** a three-tier consumer-facing menu (attestation only /
+cross-check / triangulation) with key parameters declared as needing calibration —
+sampling rate 3%, cross-check cosine threshold 0.85, and so on — and no
+anti-grinding analysis of the challenge mechanism.
+
+**Was (in prior v0.1 derivation cycles):** a single-mechanism design — scheme (C),
+commit-at-send · prove-if-challenged · lose-everything-if-caught — with: a
+bounded-discrepancy aggregate sequential test (an anytime-valid betting e-process,
+controlled by Ville's inequality with no independence or variance assumption);
+the closed-form economic viability threshold `T = √[2τG·log(1/α) / (ρ·L·S_NCS)]`
+relating effect size to the deterrence economics of RFC-0001; a binding
+cross-layer constraint linking the slash propagation window to the verifier
+rotation cadence; the canonical-numerics requirement on the audited path as the
+pivotal design lever; and a pre-registered two-gate testnet experiment (the
+"safety null first, viability second" protocol called b2 internally).
+
+**Now (v0.2):** both, integrated. The three-tier menu is the outer, consumer-facing
+structure — it stays, because it is the right way to expose a cost/assurance
+tradeoff to the requester. The unified primitive beneath all three tiers is
+commit-at-send: Merkle binding of the full logit trace, beacon-bound challenge
+selection (anti-grinding), beacon-derived auditor assignment (anti-collusion).
+Tier 1's "3% sampling" becomes a default *example* with its deriving inequality
+made transparent (the sampling rate `p` is bounded below by the deterrence
+condition and above by the budget, both derived from RFC-0001 economics). Tier 2's
+"cross-check" is scheme (C) properly stated, with the betting e-process replacing
+the per-position cosine threshold of the v0.1(early) draft. Tier 3's triangulation
+has each of the N committee peers publish independent commit-at-send commitments,
+so the anti-grinding guarantee is per-peer and the convergence test sits on top of
+it. Canonical numerics is a hard requirement for any tier ≥ 2. The b2 experiment
+opens the document as the empirical decision rule.
+
+**Why:** the v0.1(early) draft introduced a much better user-facing surface than
+any prior draft had — the explicit tier-by-tier menu is genuinely good design, and
+it covers cases (Tier 3 triangulation, human feedback for subjective domains) that
+the earlier single-mechanism design did not. But its parameters were guesses, and
+its cross-check rule (per-position cosine) had been proven inadequate against the
+make-or-break adversary class (FP8-degradation fraud, where honest hardware noise
+and dishonest quantization overlap per-position and are separable only in
+aggregate). The earlier work derived the rigorous mechanism that fixes the
+parameters and the cross-check; it was published and survived independent review.
+Discarding it and replacing the parameters with guesses would cede ground to
+expert critique that the project had already earned. Integrating keeps both: the
+explicable surface, the defensible mechanism. No funeral. A marriage.
+
+### 5 · RFC-0004 Reputation · v0.1(early) → v0.2 · two layers, witness over CRDT
+
+**Was (v0.1 early):** a single mechanism — a small slow blockchain with novel
+"Proof-of-Unique-Hardware" (PoUH) consensus as the primary structure. Slashing
+arises from finalized chain blocks. Hardware attestation provides Sybil
+resistance; VRF selects committees of K=64 from the attested peer population;
+2/3 committee signatures finalize a block.
+
+**Was (in prior v0.1 derivation cycles):** a consensus-free design — a grow-only
+set (G-Set CRDT) of self-authenticating monotone fault proofs. `VERIFY(π)` is a
+deterministic context-free pure function: no two honest peers can disagree on
+the validity of an individual proof. Slashing is immediate, locally, per peer who
+receives a proof. The only convergence required is set convergence (gossip
+propagation, `O(c·Δ·log N)` under anti-eclipse) — not consensus. Critically, a
+self-authenticating monotone fact needs *one honest path*, not an honest majority.
+The trust-closed argument of the corpus terminates here in a bounded-time social
+coordination assumption, not in a committee.
+
+**Now (v0.2):** two architecturally distinct layers, one architecture, with a
+clear division of labor. **Layer 1** is the consensus-free G-Set CRDT of fault
+proofs. Anyone who receives a proof slashes locally and immediately, no consensus
+needed. The chain has no role in individual slashing. **Layer 2** is the PoUH
+chain, redirected to a different job: its committees, per epoch, attest to the
+state of the CRDT at the snapshot time — confirming which fault proofs have
+propagated, and which peers have crossed rate- or pattern-based thresholds ("6
+medium-severity events in 30 days"). The chain is *witness*, not *judge*. It
+cannot fabricate slashes (the proofs remain self-authenticating; VERIFY rejects
+forgeries regardless of what any committee signs); it can only fail to witness
+true ones, in which case the next epoch's committee picks up the backlog.
+
+**Why:** the v0.1(early) draft provided something the consensus-free design did
+not: a clean mechanism for global ordering of events, which makes rate-based and
+pattern-based slashing rules straightforward to specify. Pure CRDTs do not order;
+ordering is what a chain is for. But the v0.1(early) draft made the chain
+*load-bearing for individual slash propagation*, which reintroduces the
+honest-majority assumption and weakens the manifesto reconciliation (Thesis 13's
+"no central authority" lives in tension with Thesis 10's "consensus layer
+assigns each attested machine one voice"). The two-layer design keeps what each
+mechanism does best: the CRDT for fast consensus-free slashing under the weakest
+possible assumption; the chain for ordered, finalized epoch-summaries of state
+that has already been established by the CRDT.
+
+One consequence is graceful degradation: a compromised PoUH committee for one
+epoch cannot create false slashes (the proofs are still self-authenticating); it
+can only delay witnessing. A pure-chain design would have suffered a more serious
+failure under the same compromise. A second consequence is bootstrap softening:
+the CRDT works from day one with one honest path; the PoUH chain matures as the
+attested population grows past the size at which committees of 64 become
+statistically defensible. The genesis bootstrap is no longer a forced choice
+between "we have a chain" and "we have nothing."
+
+On novelty: "PoUH consensus" presented alone does not engage with prior art —
+Oasis Network's confidential validators, Phala's TEE-attested workers, the broader
+family of VRF-selected committee BFT mechanisms. The honest novelty claim is
+narrower and stronger: it is the *combination* of PoUH-attested committees as an
+ordered-witness layer above a consensus-free CRDT of self-authenticating proofs.
+That combination, as far as the present draft authors know, is new, and it is
+substantially more defensible under expert critique than the
+consensus-mechanism-alone framing.
+
+### 6 · Manifesto edits
+
+**Was:** sixteen numbered theses, with "we refuse to issue a token" as an absolute
+and "we build by barter" implying barter was the only economy.
+
+**Now:** seventeen theses. Thesis 7: "we build *a community* by barter" — the
+community's economy, not the protocol's only one. New Thesis 9: "we build memory
+into the network" — explicit endorsement of the semantic cache. Thesis 10: "the
+protocol's consensus layer assigns each attested machine exactly one voice" —
+explicit endorsement of PoUH, scoped to the witness layer. Thesis 15: "we refuse
+to issue a token *at the protocol layer*" — allowing economies on top to use
+whatever instruments they declare. New Thesis 17: "we refuse to extract rent" —
+the foundation does not capture the network it built.
+
+**Why:** the original wording, taken literally, would have made the cache and the
+economic pluralism inconsistent with the manifesto itself. The edits move from
+absolute refusals to layered ones — refusing at the protocol layer what we cannot
+allow there, permitting on top what we cannot, and should not, forbid.
+
+A residual tension is acknowledged and not erased: Thesis 10's consensus layer is
+in literal tension with Thesis 13's refusal of central authority. RFC-0004 v0.2's
+two-layer architecture reconciles them in practice — the PoUH layer is rotating,
+non-load-bearing for individual slashes, and gracefully degradable — but the
+reader is invited to test whether the reconciliation is sound.
+
+---
