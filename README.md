@@ -2,7 +2,7 @@
 
 > An open protocol for collective intelligence.
 
-[Manifesto](./MANIFESTO.md) · [Governance](./GOVERNANCE.md) · [RFCs](./spec/) · [Issues](https://github.com/Ants-Community/ants/issues) · [Chat Space](https://matrix.to/#/#ants-community:matrix.org) · [ants.community](https://ants.community)
+[Manifesto](./MANIFESTO.md) · [Governance](./GOVERNANCE.md) · [RFCs](./spec/) · [Implementation roadmap](./IMPLEMENTATION.md) · [Issues](https://github.com/Ants-Community/ants/issues) · [Chat Space](https://matrix.to/#/#ants-community:matrix.org) · [ants.community](https://ants.community)
 
 ---
 

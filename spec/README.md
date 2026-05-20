@@ -12,10 +12,11 @@ The protocol is structured as a stack of layers. Reading order matches dependenc
 | [RFC-0004](./RFC-0004-reputation-pouh.md) | Reputation — two-layer CRDT/PoUH + (A,T,κ) spine + bonds with accounting + pruning, partition recovery, selective disclosure | Draft v0.5 | RFC-0003, RFC-0005, RFC-0008 |
 | [RFC-0005](./RFC-0005-identity.md) | Identity — hardware attestation, multi-vendor TEE, Sybil economics | Draft v0.1 (early) | — |
 | [RFC-0006](./RFC-0006-payment-terms.md) | Payment Terms & Economic Pluralism — how multiple economies coexist | Draft v0.1 (early) | RFC-0001 |
-| RFC-0007 | Post-v1.0 Governance — TSC mechanics, transition from BDFL | Planned | [GOVERNANCE.md](../GOVERNANCE.md) |
+| [RFC-0007](./RFC-0007-governance.md) | Post-v1.0 Governance — TSC mechanics, transition from BDFL | Draft v0.1 | [GOVERNANCE.md](../GOVERNANCE.md) |
 | [RFC-0008](./RFC-0008-wire-formats.md) | Wire Formats, Crypto Primitives, Reference Constants — the implementation glue; drand failover, BLS/Ed25519 K-transition | Reference v0.2 | — |
 | [RFC-0009](./RFC-0009-canonical-numerics.md) | Canonical Numerics for Verifiable Inference — INT8-GPTQ default + FP16 fallback; Y_canon unifies serving/caching | Draft v0.2 (early) | RFC-0002, RFC-0003, RFC-0008 |
 | [RFC-0010](./RFC-0010-bootstrap.md) | Bootstrap Sequence — genesis state, first peer's flow, four-phase capability matrix, reference launch recipe | Draft v0.1 | all design RFCs + RFC-0008, RFC-0009 |
+| [RFC-0011](./RFC-0011-formal-model.md) | Formal Model of Cross-Layer Composition — invariants, threat model, composition properties (TLA+ spec of intent) | Draft v0.1 | all design RFCs + RFC-0008, RFC-0009, RFC-0010 |
 
 ## Status legend
 

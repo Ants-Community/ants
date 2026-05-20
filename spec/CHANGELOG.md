@@ -884,3 +884,132 @@ L2, vendor compromise, all empirical parameters pending b2 — remain
 acknowledged as irreducible or testnet-dependent.
 
 ---
+
+## Round 2 — RFC-0011 added + IMPLEMENTATION.md added + RFC-0007 promoted · 2026-05-20
+
+Closes the three HARD items remaining after Round 1: the formal model
+(N3), the implementation roadmap (N4), and the TSC mechanics (N5). Three
+distinct deliverables, one CHANGELOG entry.
+
+### N3 — RFC-0011 Formal Model of Cross-Layer Composition (added)
+
+**Was:** the corpus had no formal model of how the four time-scales (DHT
+eventually-consistent, CRDT monotone, chain 2/3 finality, drand
+round-bounded) compose under adversarial conditions. Each design RFC
+reasoned about its own layer; none reasoned about the composition.
+Solana-class partition-recovery failures live at exactly those seams.
+
+**Now:** RFC-0011 added at Draft v0.1. Specifies what a TLA+ (or
+equivalent) artefact must capture: 10 invariants (slash safety/liveness,
+CRDT convergence, chain finality, partition recovery, bond no-double-
+lock, selective disclosure soundness, canonical determinism, Y_canon
+caching, genesis sunset); 7-class threat model (Byzantine peers, network,
+timing, compute, hardware, patient, social); 8 composition properties
+(C1–C8) at the seams between layers; recommended tooling (TLA+ primary
+for safety/liveness; PRISM for the e-process statistical claims; Coq/Lean
+as v2.0 deliverable).
+
+The RFC is **specification of intent**, not the TLA+ code. It declares
+what the verification must prove; the verification artefact (~6–12 weeks
+of TLA+-fluent contributor time) is a downstream engineering deliverable.
+
+**Why:** the reviewer was correct that composition-level failures are the
+expensive ones to find late. Spec-of-intent now lets the verification be
+commissioned with a clear deliverable. The spec is the cheap part; the
+verification work is the cost. Doing them in this order lets the project
+attract the right TLA+ contributor rather than guess what the verification
+should prove.
+
+### N4 — IMPLEMENTATION.md added at repo root
+
+**Was:** the corpus described the "all-in-one reference client" without
+decomposing it. Prospective contributors had no surface to engage with —
+"come help build the client" did not specify what "the client" actually
+is. The earlier corpus estimate of "6–12 months with 2–4 engineers" was
+the reviewer's correctly-identified 3× underestimate.
+
+**Now:** IMPLEMENTATION.md at repo root (not an RFC; project-management
+document). Decomposes the client into **15 sub-components** grouped into
+6 layers: foundation (crypto/CBOR/TEE), network (transport/DHT/gossip),
+reputation+identity (L1 CRDT/L2 chain/identity service), cache
+(distributed cache/embedding service), inference (canonical kernels/
+orchestration), economy+coordination (ledger/bond accounting). Each
+component: spec reference, effort in engineer-months, dependencies,
+notes. Critical-path identified (TEE harness → L1 CRDT → L2 chain →
+inference orchestration → bond accounting = ~22 EM unbreakable). Six-
+phase plan over 36 months for a team of 4.
+
+The honest figure: **72–92 engineer-months total**, **24–36 months
+wall-clock with a team of 4–6** including integration testing and
+security audit. Communicated explicitly so prospective contributors and
+funders see the true cost.
+
+**Why:** the implementation timeline is not a marketing surface — it is
+the cost-of-entry contributors need to know honestly before deciding to
+participate. Hiding it (or implicitly underestimating it 3×) discourages
+serious engagement.
+
+The README has been amended to link IMPLEMENTATION.md from the top
+navigation chip line.
+
+### N5 — RFC-0007 promoted from Planned to Draft v0.1
+
+**Was:** GOVERNANCE.md sketched the TSC (7 seats, 2/3 majority, 2-year
+staggered terms, transition from BDFL) but did not specify mechanics:
+who elects the 3 subsystem maintainers, what qualifies as a "subsystem",
+how the chair is elected, conflicts-of-interest, off-cycle removal. The
+reviewer correctly noted: "needs to be written before sunset, not after."
+
+**Now:** RFC-0007 promoted to Draft v0.1. Specifies:
+
+- **Seven seats** as 3 subsystem maintainers + 3 contributor-at-large +
+  1 chair (transitional 24mo BDFL, then 1-year renewable-once elected).
+- **Three subsystems** with explicit RFC boundaries: Verification &
+  Numerics (RFC-0003 + RFC-0009 + RFC-0011); Reputation & Identity
+  (RFC-0004 + RFC-0005 + RFC-0008 crypto primitives); Cache, Economy &
+  Coordination (RFC-0001 + RFC-0002 + RFC-0006 + RFC-0010).
+- **Election mechanics**: 14-day nomination + 14-day vote (subsystem
+  plurality with run-off; at-large STV); transition election extended to
+  60-day nomination + 30-day vote.
+- **Eligibility**: voter and candidate eligibility based on merged-work
+  in trailing 12 months in the relevant scope.
+- **Decision thresholds** (per GOVERNANCE.md): simple majority for
+  routine, 2/3 for canonical artefacts (no chair tiebreak), unanimous
+  for governance changes. Quorum: 5 of 7 for routine/canonical, all 7
+  for governance.
+- **Conflicts of interest**: disclosure + recusal mandatory; thresholds
+  recompute against remaining present seats; petition-based recusal
+  available to the contributor body.
+- **Off-cycle removal**: 2/3 of remaining seats + signed petition by
+  ≥25% of relevant contributors. Intentionally high bar.
+- **Transition flow at v1.0**: BDFL declares → 60-day nomination →
+  30-day election → first TSC convenes with outgoing BDFL as chair for
+  24 months → BDFL chair role expires, TSC elects new chair from among
+  members.
+- **Amendment process**: during v0.x, BDFL after 4-week public comment
+  (extended from standard); after v1.0, unanimous TSC + 60-day comment
+  per GOVERNANCE.md.
+
+**Why:** governance mechanics that people will need to rely on at v1.0
+must be specified before they need to rely on them. Drafting RFC-0007 in
+v0.x gives the contributor body time to argue with the mechanics before
+anything is at stake. The reviewer was correct that "forthcoming" after
+v1.0 is too late.
+
+### State after Round 2
+
+All HARD items from the multi-persona review are now closed (Round 1
+closed the four BLOCKs; Round 2 closes N3, N4, N5). EDGE-tier register
+corrections (Round 3) are the only review items remaining. The spec
+corpus is now genuinely review-cycle-complete:
+
+- 11 RFCs (0001–0011, with 0007 promoted) + GOVERNANCE.md + MANIFESTO.md
+- 2 root-level documents (README.md + IMPLEMENTATION.md)
+- 1 CHANGELOG.md tracking every substantive decision
+
+The remaining open items are either Round 3 register corrections,
+testnet-empirical (b2), explicit irreducible residuals handed to the
+credible-fork-threat, or downstream engineering work (the TLA+ artefact,
+the reference client itself).
+
+---
