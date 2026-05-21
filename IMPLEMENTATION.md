@@ -67,7 +67,7 @@ link against or fork):
 | BLS12-381 | [`supranational/blst`](https://github.com/supranational/blst) — C + asm, fastest BLS implementation |
 | ECVRF (ELL2) | Forked from [`RFC 9381`](https://www.rfc-editor.org/rfc/rfc9381) reference + Elligator 2 C port |
 | CBOR | [`tinycbor`](https://github.com/intel/tinycbor) or [`nanocbor`](https://github.com/bergzand/NanoCBOR) — both audited for RFC 8949 §4.2.1 deterministic encoding |
-| P2P transport | open question: custom C minimal stack, [`libp2p-c`](https://github.com/libp2p/cpp-libp2p) (C++ binding usable from C), or external daemon via IPC |
+| P2P transport | [`picoquic`](https://github.com/private-octopus/picoquic) — IETF QUIC reference implementation in pure C99, BSD-3-licensed. ANTS-native protocol (DHT, gossip, peer routing) is built on top of picoquic streams. See decision rationale in the component #4 row below. |
 | TEE SDK | Intel SGX/TDX SDK, AMD SEV-SNP SDK, ARM CCA reference, Apple SE Objective-C bridge, Qualcomm QSEE — all C/C++ native, no binding work |
 | Build system | CMake (cross-platform superbuild) or pure Make + autoconf |
 
@@ -116,7 +116,7 @@ Foundation must be complete; layers can then build in parallel.
 
 | # | Component | Spec | Effort | Notes |
 |---|---|---|---|---|
-| 4 | P2P transport | RFC-0002 §DHT routing, RFC-0010 §First peer's flow | 3 EM (libp2p) or 6 EM (custom) | Recommend libp2p for time-to-implementation; custom transport is a v2.0 deliverable. |
+| 4 | P2P transport | RFC-0002 §DHT routing, RFC-0010 §First peer's flow | 5 EM | **Stack: vendored [`picoquic`](https://github.com/private-octopus/picoquic) (IETF QUIC reference, pure C99, BSD-3) + ANTS-native protocol layered on QUIC streams.** The earlier "libp2p (3 EM) or custom (6 EM)" framing was abandoned during foundation/network design (2026-05-21): libp2p has no mature C99 implementation (the canonical ones are Go/Rust/JS, and a C++ binding violates the project's C-pure portability discipline). Picoquic gives us IETF-standard QUIC (TLS 1.3 + multiplexed streams + congestion + NAT-friendly handshake) as a ~50k-LOC snapshot-vendorable BSD-3 dependency; the application protocol (peer routing, DHT queries, gossip frames) is written in ANTS-native C99 on top of picoquic streams, not borrowed from libp2p's protocol stack. Ed25519 peer identity binds to the QUIC TLS handshake via raw-public-key (RFC 7250) so we don't carry X.509+CA complexity. |
 | 5 | Kademlia DHT (shard-key variant) | RFC-0002 §DHT routing | 3 EM | Standard Kademlia adapted for LSH shard-keys. Mature reference implementations exist. |
 | 6 | Gossip overlay (L1 CRDT propagation) | RFC-0004 §Layer 1 + §G-Set pruning | 3 EM | Anti-eclipse peer selection (RFC-0005); gossip discipline; rate limits. |
 
@@ -234,7 +234,7 @@ add GPU canonical kernels per platform as v0.2+ deliverables.
 
 | Phase | Months | Focus | Deliverable |
 |---|---|---|---|
-| **A** | 1–6 | Foundation + start canonical kernel | Crypto + CBOR done; TEE harness `NOT_IMPLEMENTED` stub in place (real implementation deferred to v2.x per RFC-0005); canonical CPU kernel for one architecture; P2P transport via libp2p. |
+| **A** | 1–6 | Foundation + start canonical kernel | Crypto + CBOR done; TEE harness `NOT_IMPLEMENTED` stub in place (real implementation deferred to v2.x per RFC-0005); canonical CPU kernel for one architecture; P2P transport via vendored picoquic + ANTS-native protocol on top. |
 | **B** | 6–12 | Finish network layer + start reputation/identity + start cache | DHT + gossip done; L1 CRDT functional (no pruning yet); L2 chain skeleton with Ed25519 multi-sig; identity service first version; cache LSH routing working. |
 | **C** | 12–18 | Finish reputation/identity + start inference orchestration + finish cache | L1 CRDT with pruning + late-joiner; L2 chain with BLS transition + partition recovery; identity full; bond accounting first version; inference orchestration skeleton. |
 | **D** | 18–24 | Finish inference layer + economy + coordination + first integration | Canonical kernels for all CPU architectures; FP16 fallback; inference orchestration with commit-at-send + e-process audit; local ledger + bond accounting integrated. |

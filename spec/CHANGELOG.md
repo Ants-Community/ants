@@ -6,6 +6,18 @@ amendments are. Each entry states what was, what is now, and why.
 
 ---
 
+## IMPLEMENTATION.md — P2P transport: picoquic, not libp2p · 2026-05-21
+
+**Was:** Component #4 (P2P transport) listed two paths — "3 EM via libp2p, 6 EM custom" — with the recommendation to use libp2p for time-to-implementation, deferring a custom stack to v2.0. The libraries table left the choice as an open question between custom C, libp2p-c (C++ binding), or an external daemon via IPC.
+
+**Is now:** **Stack pinned to vendored [`picoquic`](https://github.com/private-octopus/picoquic) (IETF QUIC reference, pure C99, BSD-3) + ANTS-native application protocol on top.** The component descriptor is rewritten to reflect this. EM estimate revised from "3 or 6" to 5: ~3 EM to wrap picoquic into the ants-native transport API, ~2 EM for the application protocol primitives (peer routing, stream framing) that previously would have come from libp2p.
+
+**Why:** During foundation/network architectural review, the libp2p-c path turned out to be impractical for a C99-pure reference client. The canonical libp2p implementations are Go (go-libp2p) and Rust (rust-libp2p); the C++ binding (cpp-libp2p) is half-maintained and pulls in a C++ runtime that violates the project's day-zero portability commitment. The external-daemon-via-IPC option carries the same runtime dependency wrapped in process boundaries. By contrast, picoquic is the IETF QUIC reference implementation in pure C, ~50k LOC, BSD-3, snapshot-vendorable in the same shape as `deps/blst`/`deps/blake3`/`deps/ed25519`. We get the well-specified parts (TLS 1.3 handshake, stream multiplexing, congestion, NAT-friendly UDP transport) from picoquic, and we write the ANTS-specific application protocol (peer identity binding via Ed25519+RFC 7250 raw-public-key, DHT query framing, gossip discipline) in our own C99. This is closer in spirit to "we control our protocol layer" than wrapping libp2p's opinionated peer/routing/pubsub stack.
+
+The amendment is documented in IMPLEMENTATION.md component #4 row and the libraries table; the rationale lives in the row's prose.
+
+---
+
 ## IMPLEMENTATION.md — TEE harness deferred to v2.x · 2026-05-21
 
 **Was:** Component #3 (TEE attestation harness) was on the v1.0 critical
