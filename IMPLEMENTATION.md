@@ -108,7 +108,7 @@ one.
 |---|---|---|---|---|
 | 1 | Crypto primitives library | RFC-0008 §2–4 | 2 EM | BLAKE3 (C ref impl), Ed25519 (ed25519-donna or verified C), BLS12-381 (blst, C+asm), ECVRF-ELL2 (forked from RFC 9381 reference). Mature C libraries exist; the work is wrapping + test-vector conformance + the ELL2 hash-to-curve port. |
 | 2 | CBOR canonical codec | RFC-0008 §1.1 | 1 EM | Deterministic encoding per RFC 8949 §4.2.1. Candidate baselines: `tinycbor` (Intel) or `nanocbor`. Most existing libraries are non-conformant on the deterministic-encoding rules; expect to fork one and tighten it. |
-| 3 | TEE attestation harness | RFC-0005 | 6 EM | Five vendor families (Intel TDX, AMD SEV-SNP, ARM CCA, Apple SE, Qualcomm QSEE) — all native C/C++ SDKs, no binding work. Each has its own attestation format + signing chain + revocation flow. Component must also enforce `ATTESTATION_FRESHNESS_WINDOW` (RFC-0005 §Attestation freshness, default 30d) uniformly. **The single longest foundation component.** |
+| 3 | TEE attestation harness | RFC-0005 | 6 EM | **Targeted v2.x, not v1.0.** Five vendor families (Intel TDX, AMD SEV-SNP, ARM CCA, Apple SE, Qualcomm QSEE) — all native C/C++ SDKs. Each has its own attestation format + signing chain + revocation flow. Component must also enforce `ATTESTATION_FRESHNESS_WINDOW` (RFC-0005 §Attestation freshness, default 30d) uniformly. **Deferred to v2.x** per RFC-0005's hardware-trust timeline (current silicon-generation vulnerability windows close around 2030-2032; TEE attestation as a participation path becomes operationally meaningful then). v1.0 ships with the API surface as a `NOT_IMPLEMENTED` stub so upstream components can integrate against it; verifiability in v1.0 rests on the other three legs of RFC-0002 (re-execution, scheme (C) probabilistic, reputation). |
 
 ### Network layer (3 components, ~9 engineer-months)
 
@@ -208,14 +208,20 @@ Foundation (parallel: #1, #2, #3)
                      └──> Integration testing once all reach feature-complete
 ```
 
-The single longest unbreakable chain is approximately:
+The single longest unbreakable chain for **v1.0** is approximately:
 
-`#3 (TEE harness, 6 EM) → #7 (L1 CRDT, 4 EM) → #8 (L2 chain, 6 EM) → #13 (inference orchestration, 4 EM) → #15 (bond accounting, 2 EM)`
+`#7 (L1 CRDT, 4 EM) → #8 (L2 chain, 6 EM) → #13 (inference orchestration, 4 EM) → #15 (bond accounting, 2 EM)`
 
-= 22 engineer-months on the critical path with all other components
-running in parallel. This means even with infinite parallel engineering
-the wall-clock minimum is ~22 months from start to feature-complete,
-plus integration testing.
+= 16 engineer-months on the critical path with all other components
+running in parallel. Even with infinite parallel engineering the
+wall-clock minimum is ~16 months from start to feature-complete, plus
+integration testing.
+
+(Component **#3 (TEE attestation harness)** is no longer on the v1.0
+critical path: per RFC-0005's hardware-trust timeline it is targeted
+for v2.x (2030-2032 silicon-vulnerability window closure). v1.0 ships
+with a `NOT_IMPLEMENTED` stub for the TEE API surface; verifiability
+rests on the other three legs of RFC-0002.)
 
 The component most likely to slip: **#12 (canonical kernel library)** if
 GPU canonical kernels turn out to be intractable on key platforms.
@@ -228,7 +234,7 @@ add GPU canonical kernels per platform as v0.2+ deliverables.
 
 | Phase | Months | Focus | Deliverable |
 |---|---|---|---|
-| **A** | 1–6 | Foundation + start TEE harness + start canonical kernel | Crypto + CBOR done; TEE 3 vendors complete; canonical CPU kernel for one architecture; P2P transport via libp2p. |
+| **A** | 1–6 | Foundation + start canonical kernel | Crypto + CBOR done; TEE harness `NOT_IMPLEMENTED` stub in place (real implementation deferred to v2.x per RFC-0005); canonical CPU kernel for one architecture; P2P transport via libp2p. |
 | **B** | 6–12 | Finish network layer + start reputation/identity + start cache | DHT + gossip done; L1 CRDT functional (no pruning yet); L2 chain skeleton with Ed25519 multi-sig; identity service first version; cache LSH routing working. |
 | **C** | 12–18 | Finish reputation/identity + start inference orchestration + finish cache | L1 CRDT with pruning + late-joiner; L2 chain with BLS transition + partition recovery; identity full; bond accounting first version; inference orchestration skeleton. |
 | **D** | 18–24 | Finish inference layer + economy + coordination + first integration | Canonical kernels for all CPU architectures; FP16 fallback; inference orchestration with commit-at-send + e-process audit; local ledger + bond accounting integrated. |
@@ -246,10 +252,11 @@ For a team-of-4 with limited bandwidth, the work that can be paused
 without slipping the critical path:
 
 **Critical path (must not slip):**
-- TEE attestation harness
 - L1 CRDT + L2 chain (and their composition)
 - Canonical kernel library
 - Integration testing
+- (TEE attestation harness is **no longer on the v1.0 critical path** —
+  see component #3 above and the v2.x deferral notes throughout.)
 
 **Parallel work (can slip without delaying the critical path):**
 - Cache layer (depends on reputation but doesn't block it)

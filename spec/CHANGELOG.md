@@ -6,6 +6,28 @@ amendments are. Each entry states what was, what is now, and why.
 
 ---
 
+## IMPLEMENTATION.md — TEE harness deferred to v2.x · 2026-05-21
+
+**Was:** Component #3 (TEE attestation harness) was on the v1.0 critical
+path, listed as "the single longest foundation component" (6 EM), with a
+[CLAIM] issue (#6) treating it as a near-term nomination target.
+
+**Is now:** Targeted v2.x explicitly. Component descriptor #3 marked as
+deferred with citation to RFC-0005's hardware-trust timeline (current
+silicon-generation vulnerability windows close around 2030-2032, when
+TEE attestation as a participation path becomes operationally meaningful).
+v1.0 ships with a `NOT_IMPLEMENTED` stub for the TEE API surface so
+upstream components can integrate against it; verifiability rests on the
+other three legs of RFC-0002 (re-execution, scheme (C) probabilistic,
+reputation). Critical-path chain shortened from 22 to 16 engineer-months.
+
+**Why:** The 2026 nomination window for the TEE [CLAIM] issue was creating
+an artificial pressure inconsistent with the 2030-2032 timeline already
+adopted in RFC-0005 Round 1. Anchoring TEE explicitly to v2.x removes that
+pressure, lets the community nominate a primary on a realistic schedule
+(years, not weeks), and lets v1.0 ship with full RFC-0002 verifiability
+even without TEE-as-a-fourth-leg.
+
 ## RFC-0001 — Barter · v0.1 → v0.2 · 2026-05-19
 
 Two amendments, both forced by discoveries in the later RFCs (RFC-0002 through
