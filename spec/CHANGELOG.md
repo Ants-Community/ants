@@ -6,6 +6,18 @@ amendments are. Each entry states what was, what is now, and why.
 
 ---
 
+## RFC-0005 v0.2 — Anti-eclipse peer sampling specified · 2026-06-02
+
+**Was:** Anti-eclipse peer selection was named as RFC-0005's responsibility by RFC-0004 (§"What we have not figured out yet") but left unspecified: the gossip overlay's view (Component #6) was caller-managed with no defined source, so the one-honest-path property it underwrites had no mechanism behind it.
+
+**Is now:** RFC-0005 gains §"Anti-eclipse peer sampling", which fixes the *mechanism* on two axes of choice. **Placement:** the Sybil-resistant sample is a DHT (Component #5) primitive — keeping the gossip engine substrate-agnostic and the security-critical selection testable in one place — rather than embedded in the gossip engine (layer coupling, untestable without a live DHT) or scattered across per-deployment integration glue (untested). **Selection:** diversity from three independent axes — a bucket-diverse routing-table draw, random-target probes, and view rotation — with **attestation-weighted selection named as the strong fourth axis but deferred** until the attestation flow is deployed. The recursion (anti-eclipse ⇄ Sybil-resistance) is stated and bounded by the one-path-not-majority asymmetry. RFC-0004's open-item bullet is updated to point here (a cross-reference, no RFC-0004 version change).
+
+**Why:** Component #6 (gossip) had shipped every piece that needed no cross-layer decision (engine, transport binding, lazy-pull, persistent channel, T_prop instrumentation, local reject accountability); anti-eclipse was the remaining architectural fork — *where* sampling lives and *what* it samples on. Deciding it unblocks the reference client's view wiring and stops RFC-0004 from leaning on a wholly-unspecified assumption.
+
+**Explicitly NOT closed:** a *provable* eclipse-probability bound. Axes 1–3 are defence-in-depth heuristics; the rigorous guarantee waits on attestation-weighted selection (axis 4) plus a formal model. RFC-0004's one-honest-path assumption is narrowed and made costly, **not discharged** — and must not be reported as resolved.
+
+---
+
 ## IMPLEMENTATION.md — P2P transport: picoquic, not libp2p · 2026-05-21
 
 **Was:** Component #4 (P2P transport) listed two paths — "3 EM via libp2p, 6 EM custom" — with the recommendation to use libp2p for time-to-implementation, deferring a custom stack to v2.0. The libraries table left the choice as an open question between custom C, libp2p-c (C++ binding), or an external daemon via IPC.

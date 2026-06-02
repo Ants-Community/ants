@@ -1,6 +1,6 @@
 # RFC-0005 — Identity
 
-**Status:** Draft · v0.1 (early — substantial revision expected)
+**Status:** Draft · v0.2 (early — substantial revision expected)
 **Topic:** How a peer proves it is a unique physical machine, without naming who owns it.
 **Audience:** You, if you have ever wondered why every previous decentralised AI project either had a token or had a Sybil problem.
 **Depends on:** trusted hardware that exists today.
@@ -248,6 +248,96 @@ open-hardware acceptance arriving, by b2 calibration converging, or
 particular design needs reconsidering. Naming the window now lets the
 project measure progress against it rather than discover it as a
 surprise.
+
+---
+
+## Anti-eclipse peer sampling
+
+RFC-0004's entire Layer-1 security reduces to one structural property: a
+monotone, self-authenticating fault proof needs **one honest gossip path** from
+detector to victim within `T_prop` — not an honest majority (RFC-0004 §"The
+structural win"). That property is *conditional*. It holds only while an
+adversary cannot **vertex-cut the honest subgraph around a victim** — cannot fill
+that victim's gossip view entirely with colluding peers. Filling a view is an
+**eclipse**; an eclipsed peer never receives the slash that would retire a
+colluder, and `T_prop < T_beacon` (RFC-0004 §"The binding cross-layer
+constraint") silently becomes vacuous for them. RFC-0004 names this as RFC-0005's
+problem and stops. This section fixes the *mechanism* that makes an eclipse
+expensive — and is honest about what it does **not** prove.
+
+### The view is sampled, not curated
+
+The gossip overlay (Component #6) deliberately does not choose its own
+neighbours: its view is a set the surrounding node populates. The questions are
+*who* populates it and *how*. Two structural choices.
+
+**Placement — the DHT owns sampling.** The Sybil-resistant selection is a
+sampling primitive of the DHT (Component #5) — not inside the gossip engine, and
+not in per-deployment integration glue. The DHT already holds the peer knowledge
+(a routing table keyed by XOR distance, plus iterative lookup), so it is the
+natural and *single* place to make eclipse-resistant selection testable.
+Embedding selection in the gossip engine would couple two network components and
+make the dissemination logic untestable without a live DHT; leaving it to glue
+would scatter the security-critical decision across every reimplementation,
+untested. The gossip engine stays substrate-agnostic — it takes peers via
+add/remove — and a conforming node wires the DHT's sample into the gossip view,
+refreshing it on a timer.
+
+**Selection — diversity from three independent axes.** No single source of peers
+is safe (a poisoned routing table eclipses by itself). The sample combines:
+
+1. **Bucket-diverse routing-table draw.** Peers spread across XOR k-buckets, so
+   the view spans the keyspace rather than clustering where an attacker can
+   cheaply position identities.
+2. **Random-target probes.** Periodic lookups toward random keys pull in peers
+   from regions of the keyspace an adversary cannot pre-position around a chosen
+   victim — the victim's future probe targets are unpredictable.
+3. **Rotation.** A fraction of the view is replaced each refresh, so a static
+   eclipse cannot lock in: the adversary must hold a majority of the view *and*
+   keep re-winning it against churn.
+
+A fourth axis — **attestation-weighted selection**, preferring and diversifying
+across distinct *attested* hardware identities (this RFC's machinery) — is the
+strongest defence and is **deferred**. It is the part that turns "diverse peers"
+into "diverse peers an adversary cannot cheaply manufacture", and it depends on
+the attestation flow above being deployed and on §"Multi-vendor reputation
+weighting". Until it lands, axes 1–3 are defence in depth, not a Sybil-resistance
+guarantee.
+
+### The recursion, stated plainly
+
+Anti-eclipse wants Sybil-resistant peer selection; Sybil-resistance is this RFC,
+which leans on the very Layer-1 reputation that anti-eclipse protects. The loop
+is real and is not eliminated here. It is **bounded** by the one-honest-path
+asymmetry: a victim needs *one* honest peer reachable in its view, not an honest
+majority, so even the unauthenticated diversity of axes 1–3 raises the attacker's
+required share of a victim's view far above what a consensus system tolerates.
+Attestation-weighting (axis 4) tightens the bound further by pricing each view
+slot at the cost of an attested identity. The loop closes to a *cost*, not to
+*impossibility*.
+
+### Parameters (testnet-calibrated)
+
+The view is governed by its size, the eager fanout `f` (RFC-0008), the rotation
+fraction, the random-probe count per refresh, and the refresh interval. All feed
+`T_prop ≈ c·Δ·log N` and are therefore jointly constrained with
+`T_prop < T_beacon`; like RFC-0003's `e` and RFC-0001's `w`, they are **measured
+on a testnet under partially-adversarial topology**, not chosen at the desk. They
+are named here so the testnet measures against them rather than discovering them
+as a surprise.
+
+### What this does not prove
+
+This section makes eclipse *expensive*; it does not make it *impossible*, and it
+does not deliver a provable bound on eclipse probability under a stated
+adversary. Axes 1–3 are heuristics; the rigorous guarantee waits on
+attestation-weighted selection (axis 4) **and** a formal eclipse-probability
+model. Concretely: **RFC-0004's one-honest-path assumption remains an
+assumption** — now narrowed and made costly, not discharged — and must not be
+reported in RFC-0004 as resolved. That is the load-bearing residual of this
+section, and the honest one: ANTS's Layer-1 liveness rests, at the bottom, on an
+anti-eclipse assumption this design makes expensive to violate and that a later
+attestation-weighted, formally-modelled revision must make precise.
 
 ---
 

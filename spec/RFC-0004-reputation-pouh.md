@@ -1213,10 +1213,14 @@ to bite:
 - **`T_prop < T_beacon` is asserted, not measured.** Real gossip latency
   under partially-adversarial topology is the number a testnet must produce,
   alongside RFC-0003's `e` and RFC-0001 v0.3's `w`.
-- **Anti-eclipse needs Sybil-resistant peer selection** — which is RFC-0005,
-  which itself benefits from this layer. The recursion is mitigated by the
+- **Anti-eclipse needs Sybil-resistant peer selection** — which is RFC-0005.
+  RFC-0005 v0.2 §"Anti-eclipse peer sampling" now fixes the *mechanism*
+  (DHT-sourced selection; diversity from a bucket draw + random-target probes +
+  rotation; attestation-weighting deferred). The recursion is mitigated by the
   one-path-not-majority asymmetry (Layer 1 needs *much* less Sybil-resistance
-  than a chain would), but it is not eliminated.
+  than a chain would) but is not eliminated, and a *provable* eclipse-probability
+  bound remains open there. So this assumption is narrowed and made costly — not
+  discharged.
 - **Committee size `K`** (currently 64) is conservative. A smaller `K` is
   cheaper per block but more vulnerable to a single epoch's committee bias;
   a larger `K` is slower. Calibration pending.
