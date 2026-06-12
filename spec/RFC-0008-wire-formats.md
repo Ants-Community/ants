@@ -1,6 +1,6 @@
 # RFC-0008 — Wire Formats, Crypto Primitives, and Reference Constants
 
-**Status:** Reference · v0.5 (living standard)
+**Status:** Reference · v0.6 (living standard)
 **Topic:** The concrete byte-level choices the protocol makes once and refers to from everywhere else.
 **Audience:** You, if you are about to write code.
 **Depends on:** all design RFCs (this document is the implementation glue between them).
@@ -76,6 +76,11 @@ deterministic encoding (essential because we hash and sign these objects).
 Hand-rolled codecs are 200–500 lines per language, which is acceptable for the
 implementation diversity the v1.0 goal requires.
 
+The concrete message-level encodings built on this profile — the DHT RPCs,
+gossip frames, fault proofs, chain objects, commits, receipts, and bond
+admissions the reference client exchanges — are catalogued in §11
+(added in v0.6).
+
 ### 1.2 · Human-facing and developer-facing: JSON
 
 **Anything intended for human eyes or developer tooling** — client API
@@ -123,6 +128,13 @@ performed for compatibility purposes.
 Where a protocol-level object must include an attestation, the protocol-level
 object's outer wrapper uses BLAKE3 (per §2.1), and the attestation is included
 verbatim as an opaque byte string inside it. The two hash universes do not mix.
+
+The same compatibility rule covers the **drand** beacon (§4.2–§4.3, added in
+v0.6): drand's chained-round relations are SHA-256 by drand's own protocol —
+the round message is `SHA-256(previous_signature ‖ round_be64)` and the
+published randomness is `SHA-256(signature)` — and the protocol verifies them
+as such (§11.7). Protocol-internal derivations over the *verified* randomness
+(the VRF seed, §4.2) use BLAKE3 per §2.1.
 
 ### 2.3 · Forbidden
 
@@ -261,11 +273,32 @@ This document reserves the following context strings:
 | `"ants-v1-vrf-seed-degraded"` | fallback VRF seed when drand is unavailable | §4.2 below |
 | `"ants-v1-trustee-rotation"` | binding for trustee key-rotation announcement | RFC-0010 §Trustee key rotation |
 | `"ants-v1-trustee-rotation-ack"` | binding for trustee key-rotation witness ack | RFC-0010 §Trustee key rotation |
+| `"ants-v1-vrf-seed"` | the per-block VRF seed (live drand path) | §4.2 below |
+| `"ants-v1-genesis"` | the genesis-state hash | RFC-0010 §Genesis state |
+| `"ants-v1-bond-tiebreak"` | race-safe bond-admission tie-break key | RFC-0004 §Atomicity; §11.10 |
+| `"ants-v1-receipt-bag-root"` | binding a receipt-bag Merkle root to its peer | RFC-0004 §Selective disclosure; §11.9 |
 
 New contexts are added to this table via amendment to this RFC, never
 hard-coded ad-hoc. The domain-separation discipline is non-negotiable: re-using
 a derived key across contexts is the single most common cause of subtle
 cryptographic bugs in deployed systems.
+
+**Binding status (added in v0.6).** The reference implementation binds
+`"ants-v1-vrf-seed"`, `"ants-v1-vrf-seed-degraded"`, `"ants-v1-bond-tiebreak"`,
+and `"ants-v1-receipt-bag-root"` today. Two groups of reserved strings are
+*not* bound by the reference encodings: the beacon-challenge contexts
+(`-beacon-audit-flag`, `-beacon-position-set`, `-beacon-auditor`) are
+superseded by the keystream construction specified in §11.8, and the Merkle
+contexts (`-fault-merkle`, `-logit-trace-leaf`, `-logit-trace-root`) by the
+prefix-byte domain separation specified in §11.4 — in both cases the
+implemented construction was pinned first and is what an independent
+implementation must match; the strings remain reserved, never recycled. The
+remaining contexts (`-shard-key`, `-cache-entry-hash`, `-bls-derive`, the
+trustee-rotation pair, `-genesis`) await their implementing components.
+Whether to migrate the superseded constructions onto `derive_key` for
+uniformity is an open question (§10): it would re-pin every committed root
+and challenge, so it happens before first cross-implementation interop or
+not at all.
 
 ### 4.2 · VRF for committee selection: ECVRF-EDWARDS25519-SHA512-ELL2
 
@@ -296,7 +329,10 @@ gratuitous. We pin ELL2.
 External entropy: the protocol uses **drand** (League of Entropy beacon) as its
 public unbiasable randomness source for VRF seed contribution. Each block's
 VRF seed is `BLAKE3.derive_key("ants-v1-vrf-seed", previous_block_hash ‖
-block_height_be64 ‖ drand_round_value)`. drand's threshold-BLS construction
+block_height_be64 ‖ drand_round_value)`, where **`drand_round_value` is the
+round's 32-byte published `randomness`** — `SHA-256` of the round's BLS
+signature, the round's canonical public output (pinned in v0.6; the signature
+itself is what gets verified, §11.7). drand's threshold-BLS construction
 makes the value unforgeable by any party with less than 2/3 of the drand
 network — substantially stronger than what ANTS can do on its own at bootstrap.
 
@@ -483,7 +519,7 @@ changes within a major version are permitted.
 | `CHOKE_WINDOW` | RFC-0001 | 20 minutes | C |
 | `CHOKE_LOOP_INTERVAL` | RFC-0001 | 10 seconds | C |
 | `OPTIMISTIC_UNCHOKE_RATIO` | RFC-0001 | 12.5% (1/8 slots) | C |
-| `TIER1_SAMPLING_RATE_p` | RFC-0003 | 0.03 (default; derived from b1) | C |
+| `TIER1_SAMPLING_RATE_p` | RFC-0003 | 0.03 (default; derived from b1; the v0.x reference client pins 1/32 via `audit_threshold = 2^59`, §11.8) | C |
 | `TIER3_COMMITTEE_SIZE_N` | RFC-0003 | 3 (configurable 3–7) | C |
 | `TIER3_CONSENSUS_THRESHOLD` | RFC-0003 | ⌈2N/3⌉ | P |
 | `TYPE_I_ERROR_BOUND_α` | RFC-0003 | 1e-6 | C |
@@ -512,6 +548,14 @@ changes within a major version are permitted.
 | `MULTI_VENDOR_WEIGHT_SINGLE` | RFC-0005 | 1.0 | C |
 | `MULTI_VENDOR_WEIGHT_DUAL` | RFC-0005 | 1.2 | C |
 | `MULTI_VENDOR_WEIGHT_TRIPLE` | RFC-0005 | 1.4 | C |
+| `DHT_K` | §11.2 (Kademlia bucket size) | 20 | C |
+| `DHT_MAX_PEERS_PER_MSG` | §11.2 | 20 (= `DHT_K`; a response carrying more is rejected) | P |
+| `DHT_ALPHA` | §11.2 (lookup concurrency) | 3 | C |
+| `DHT_BUCKET_COUNT` | §11.2 | 256 (one per XOR-distance bit) | P |
+| `GOSSIP_FANOUT_f` | RFC-0004 §The propagation bound; §11.3 | 6 | C |
+| `GOSSIP_MAX_FRAME_BYTES` | §11.3 | 4096 (receiver default; local policy) | C |
+| `GOSSIP_MAX_IDS_PER_DIGEST` | §11.3 | 64 (an IHAVE/IWANT naming more is malformed) | P |
+| `RECEIPT_NONCE_BYTES` | RFC-0004 §The receipt; §11.9 | 16 | P |
 
 Pinned values that change require a major version increment. Calibratable
 values change within the version via amendment to the corresponding RFC, with
@@ -521,7 +565,7 @@ the CHANGELOG entry citing the calibration evidence.
 
 ## 8 · Test vectors
 
-A separate repository `Ants-Community/ants-test-vectors` will host versioned
+A separate repository `Ants-Community/ants-test-vectors` hosts versioned
 test vectors for every protocol-level primitive. Each vector is a CBOR file
 with the structure:
 
@@ -550,12 +594,20 @@ Vector categories (each with multiple instances):
 - Per-position discrepancy score X_j computation
 - Betting e-process M_n computation
 - Bond formula application per act class
+- DHT RPC and gossip frame round-trips (§11.2–§11.3)
+- L2 chain objects: epoch summaries, blocks, the confirmed-proofs Merkle
+  root and inclusion paths (§11.6)
+- Receipt bodies and receipt-bag inclusion proofs (§11.9)
 
 These vectors are the *implementation-level* spec. Any client that produces
 different output for the same vector input is non-conformant.
 
-The repository is created when the reference client begins. Until then, this
-RFC declares the structure; the population is future work.
+The repository exists (created 2026-05-20, alongside the reference client)
+and so far ships packs for BLAKE3, Ed25519, BLS12-381, ECVRF-ELL2, and
+canonical CBOR. The early packs are JSON files whose fields mirror the
+`TestVector` shape — pragmatic for day-zero review; re-emission as
+canonical-CBOR `TestVector` objects per this section is pending and tracked
+in the pack README.
 
 ---
 
@@ -586,10 +638,18 @@ not bundle unrelated changes.
 - **The exact BLAKE3 hash of the canonical BGE-M3 checkpoint** is pending
   until the reference client packages a specific version. Today this RFC
   pins the *mechanism*; the *value* is filled in when the client ships.
-- **drand round mapping.** The exact convention for which drand round value
-  feeds which ANTS chain block. Probably "the drand round whose published
-  time is closest to but not after the block-proposal timestamp", but the
-  precise rule needs writing.
+- **Migrating the superseded derive_key contexts.** §4.1's beacon-challenge
+  and Merkle context strings were reserved before the reference
+  implementation pinned the keystream (§11.8) and prefix-byte (§11.4)
+  constructions instead. Re-pinning those derivations onto `derive_key`
+  would be cleaner domain-separation hygiene, but it breaks every committed
+  root and challenge — so it happens before first cross-implementation
+  interop or not at all.
+- **The v0.x reference-model weight blob** (magic `ANTSMOD1`) is pinned in
+  the reference client pending an RFC-0009 reference-model appendix. It is
+  deliberately *not* specified here: the model is illustrative and swaps
+  behind the reference-distribution seam — the protocol's interop surface is
+  the commit and the answer envelope (§11.8), not the model.
 - **CBOR canonicalisation libraries vary in conformance.** Several CBOR
   libraries do not implement RFC 8949 §4.2.1 deterministic encoding
   correctly. The reference client will validate that its CBOR encoder
@@ -606,7 +666,466 @@ not bundle unrelated changes.
 
 ---
 
-## 11 · How to contribute
+## 11 · Protocol message encodings (reference)
+
+*Added in v0.6.* The design RFCs name the protocol's objects; this section
+pins their bytes. Everything below was first defined by the reference client
+(`ants-client`), module by module, under an explicit "DRAFT pending RFC-0008"
+marker; v0.6 promotes those layouts into the specification. From here on the
+rule inverts: this document owns the bytes, and the reference client conforms
+to it.
+
+These encodings are interoperability-bearing — two implementations that
+disagree on any of them cannot exchange the object — but the protocol has not
+yet had its first cross-implementation interop event, so changes are still
+possible at minor-version cost (§9). After first interop they harden to the
+breaking-change path.
+
+Shared conventions, stated once:
+
+- Every object is canonical CBOR per §1.1, definite-length, float-free.
+  Maps are integer-keyed (compact, and canonical key order is numeric order,
+  so encoders emit fields in declaration order). The DHT alone uses text keys
+  in its message *bodies* — see §11.2.
+- Hashes are 32-byte BLAKE3 (§2.1); signatures are 64-byte Ed25519 (§3.1)
+  unless a section says otherwise. A peer-id is the peer's 32-byte Ed25519
+  public key.
+- Wire enumerations (message types, fault classes, severities, tiers) are
+  **integer-stable and append-only**: a deployed value never changes meaning,
+  deprecated values are reserved and never recycled, and an implementation
+  that meets a value it does not know fails closed — a typed "don't know",
+  never a guess. §11.11 collects the registries.
+- A cryptographic check that fails on untrusted input is a **verdict**
+  (false), not an error; only a malformed call is an error. Every verifier
+  below implements that contract.
+
+### 11.1 · Transport binding
+
+ANTS speaks **QUIC v1** with **ALPN `"ants"`** and mutual-auth TLS 1.3 using
+**RFC 7250 raw public keys** on both sides — no X.509, no CA: the TLS-layer
+identity *is* the protocol peer-id. The Certificate message carries the
+Ed25519 SubjectPublicKeyInfo, a fixed 12-byte DER prefix plus the raw key,
+44 bytes total:
+
+```
+30 2a                 SEQUENCE (42)
+   30 05              SEQUENCE (5)
+      06 03 2b 65 70  OID 1.3.101.112 (id-Ed25519)
+   03 21 00           BIT STRING (33), 0 unused bits
+   <pubkey: 32 bytes>
+```
+
+Addresses are textual multiaddrs, libp2p convention:
+`/ip4/A.B.C.D/udp/PORT/quic-v1`, with an optional trailing `/p2p/<id>` naming
+the expected peer. A dialer that knows whom it expects (bootstrap seeds,
+RFC-0010) MUST check the raw public key received in the handshake against
+that expectation and abort on mismatch.
+
+Stream discipline, by subsystem:
+
+- **DHT (§11.2):** one RPC per *bidirectional* stream. The requester writes
+  one envelope and FINs; the responder writes one envelope and FINs. The FIN
+  is the message boundary — no length prefix.
+- **Gossip (§11.3):** one persistent *unidirectional* stream per connection,
+  opened by the sender and reused for every frame pushed to that peer.
+  Because the stream is never FIN'd per message, each frame is
+  length-delimited: a 2-byte **big-endian** length prefix precedes the frame
+  bytes.
+
+### 11.2 · DHT RPC
+
+Routing is Kademlia over the 256-bit peer-id space: XOR distance, 256 buckets
+(one per distance bit), `K = 20` entries per bucket, lookup concurrency
+`α = 3`. Shard rendezvous is BitTorrent-style announce/get-peers. A 64-bit
+cache shard key (RFC-0002) maps into the address space as
+`BLAKE3(shard_key as 8 little-endian bytes)` → the 32-byte lookup target.
+
+Every message is one envelope:
+
+```
+envelope = {
+  0: type   (uint)   ; 1..8, registry below
+  1: txid   (uint)   ; request identifier, echoed verbatim by the response
+  2: body   (map)    ; per-type fields, possibly empty
+}
+```
+
+| type | message | body |
+|---|---|---|
+| 1 | PING | `{}` |
+| 2 | FIND_NODE | `{"target": bytes(32)}` |
+| 3 | GET_PEERS | `{"key": uint}` — the 64-bit shard key |
+| 4 | ANNOUNCE_PEER | `{"key": uint, "token": bytes(16)}` |
+| 5 | PING_RESP | `{}` |
+| 6 | FIND_NODE_RESP | `{"peers": [peer, …]}` |
+| 7 | GET_PEERS_RESP | `{"peers": [peer, …], "token": bytes(16)}` |
+| 8 | ANNOUNCE_PEER_RESP | `{}` |
+
+A peer descriptor is `peer = {"id": bytes(32), "addr": text}` — peer-id plus
+multiaddr. (Per §1.1 the shorter key encodes lower, so `"id"` precedes
+`"addr"` on the wire.) A response carries at most `K = 20` peers; more is
+rejected. FIND_NODE_RESP returns the K closest to `target` by XOR distance;
+GET_PEERS_RESP returns announced holders of the shard when it has any,
+otherwise the K closest to the shard's expansion so the requester can
+iterate.
+
+The `token` is opaque to the requester: 16 bytes minted by the responder,
+echoed back in a subsequent ANNOUNCE_PEER for the same shard. It defeats
+off-path announce spoofing (you must have received the GET_PEERS_RESP to
+know it); how a node mints tokens is local policy, not protocol.
+
+The DHT bodies use text keys while the envelope — and every other object
+family in this section — uses integer keys. Both are canonical under §1.1;
+the mixed convention stays as deployed, because re-keying a working wire
+format is exactly the kind of change §9 prices as breaking.
+
+### 11.3 · Gossip frames
+
+The gossip overlay (RFC-0004 §Layer 1) pushes fault proofs eagerly and fills
+gaps by lazy pull. Three frame types, each a `map(2)` with integer keys:
+
+```
+PUSH  = { 0: 0, 1: proof (bytes) }             ; one fault-proof envelope (§11.5)
+IHAVE = { 0: 1, 1: ids (array of bytes(32)) }  ; "I hold these content-ids"
+IWANT = { 0: 2, 1: ids (array of bytes(32)) }  ; "send me these"
+```
+
+An IHAVE/IWANT names 1..64 content-ids; more is malformed. Frames above the
+receiver's frame cap (default 4096 bytes) are rejected without decoding. The
+receive path is the RFC-0004 reference sketch verbatim: VERIFY-insert into
+the G-Set; new → forward to up-to-`f` view peers excluding the sender;
+duplicate → drop (the epidemic terminates); VERIFY-fail → drop and count
+against the sender. An IHAVE is answered with an IWANT naming the ids the
+local set lacks; an IWANT is answered with an ordinary PUSH per held id —
+both replies go to the requesting peer only.
+
+A late joiner imports a peer's whole set as a **snapshot frame**: a
+definite-length `array(N)` whose elements are the N proof byte-strings.
+Element order is the sender's internal order — deliberately unspecified,
+unsigned, and not content-addressed. The importer re-runs VERIFY on every
+element and dedupes by content-id, so the frame needs no authenticity of its
+own: the proofs carry theirs.
+
+### 11.4 · The canonical Merkle construction
+
+One Merkle recipe serves every tree in the protocol — prefix-byte domain
+separation (RFC 6962 style) over BLAKE3:
+
+```
+leaf  = BLAKE3( 0x00 ‖ leaf-preimage )
+node  = BLAKE3( 0x01 ‖ left ‖ right )
+empty = BLAKE3( 0x02 )            (only where an empty tree is legal)
+```
+
+A level with an odd node count **promotes** the lone trailing node unchanged
+to the next level — no duplication, so the duplicate-pair ambiguity of
+Bitcoin-style trees does not arise, and the prefix bytes close leaf/interior
+puns. An inclusion path is the bottom-up sequence of sibling hashes; which
+levels carry a sibling versus a promotion is fully determined by
+`(index, n_leaves)`, which every verifier replays.
+
+The instantiations:
+
+| Tree | Leaf preimage | Empty tree | Where |
+|---|---|---|---|
+| `confirmed_proofs` (epoch summary) | the L1 proof's 32-byte content-id; leaves strictly ascending | legal — `BLAKE3(0x02)` | §11.6 |
+| Commit-at-send logit trace | `dist_bytes ‖ LE64(position)` | not legal (L ≥ 1) | §11.8 |
+| Receipt bag | `body ‖ server_sig ‖ client_sig` | legal — `BLAKE3(0x02)` | §11.9 |
+
+The invalid-transition fault (§11.5) folds a citation against
+`confirmed_proofs` with this exact recipe; the reference client pins the two
+implementations against each other bit-for-bit in its tests.
+
+This construction supersedes, in the reference encodings, the
+`derive_key`-based Merkle contexts reserved by §4.1 in v0.1
+(`ants-v1-fault-merkle`, `ants-v1-logit-trace-leaf/-root`); see §10.
+
+### 11.5 · Layer-1 fault proofs
+
+The envelope every fault proof shares (RFC-0004 §Layer 1):
+
+```
+fault_proof = {
+  0: subject    (bytes 32)  ; the accused peer-id
+  1: fault_type (uint)      ; registry in §11.11
+  2: epoch      (uint)      ; the contested epoch — what G-Set pruning orders by
+  3: evidence               ; class-specific, a NATIVE CBOR value (not a
+                            ; byte-string-wrapped sub-document): the proof is
+                            ; one canonical document, encoded in a single pass
+}
+```
+
+`VERIFY(π)` is pure, deterministic, and context-free; the verdict rules for
+the two assigned classes are specified in RFC-0004 (v0.7). The
+content-address that keys the G-Set is plain `BLAKE3` over the envelope
+bytes.
+
+**EQUIVOCATION (fault_type 0).** `evidence = array(2)`, each element an
+`array(2) [ body (bytes), sig (bytes 64) ]`: two signed statement bodies. A
+statement body is itself canonical CBOR:
+
+```
+statement = {
+  0: domain  (uint)   ; statement-kind separation — registry in §11.11
+  1: epoch   (uint)
+  2: slot    (uint)
+  3: payload (bytes)  ; what the subject committed to at that slot
+}
+```
+
+The proof verifies iff both bodies are canonical, share the envelope's epoch
+and each other's domain and slot, the payloads **differ**, and both
+signatures verify under `subject` over the exact body bytes.
+
+**INVALID_TRANSITION (fault_type 1).** `evidence = array(6)`, elements in
+this fixed order:
+
+```
+[ block    (bytes)     ; the complete canonical block encoding (§11.6)
+  sig      (bytes 64)  ; the subject's Ed25519 over the 32-byte block hash
+  cited    (bytes)     ; the committed bytes claimed not to be a valid proof
+  index    (uint)      ; the cited leaf's position
+  n_leaves (uint)      ; the confirmed set's leaf count (≥ 1)
+  path     (bytes)     ; bottom-up siblings, a whole number of 32-byte hashes ]
+```
+
+The envelope's `epoch` MUST equal the block summary's epoch (pruning
+alignment). The verdict rules — including the no-nesting bound and the
+decode-failure-is-permanent invariant — are RFC-0004 v0.7 §"Fabrication is
+attributable". The signature is over the *naked* 32-byte block hash, the
+exact message committee attestations sign (§11.6): that identity is what
+makes fabrication signer-attributable with no committee or finality context.
+
+### 11.6 · Layer-2 chain objects
+
+**Epoch summary** — the signable core; attestations ride on the block:
+
+```
+epoch_summary = {
+  1: epoch            (uint)
+  2: cutoff_time      (uint)      ; unix seconds; the L1 view is "as of" this T
+  3: confirmed_proofs (bytes 32)  ; §11.4 root over the visible proofs' content-ids
+  4: findings         (array of finding)
+}
+finding = {
+  1: subject  (bytes 32)
+  2: rule_id  (uint)
+  3: window_s (uint)
+  4: count    (uint)
+  5: severity (uint)              ; registry in §11.11
+}
+```
+
+**Block:**
+
+```
+block = {
+  1: height          (uint)
+  2: prev_block_hash (bytes 32)
+  3: degraded_seed   (bool)       ; §4.3 — INSIDE the signed bytes: the
+                                  ; committee attests to the degradation claim
+  4: summary         (bytes)      ; the epoch_summary encoding, as a byte string
+}
+```
+
+`block_hash = BLAKE3(block encoding)`. A committee attestation is an Ed25519
+signature over that 32-byte hash. Finality is at least `⌈2K/3⌉` valid
+attestations, counted against the VRF-selected `K` (§3.3 disambiguation). At
+v0.x every attestation is per-signer Ed25519 regardless of K; the BLS
+aggregate above `BLS_TRANSITION_K` (§3.3) is a deferred wire compression,
+not a different trust model.
+
+Proposal is deterministic. The proposer at `height` is committee position
+`height mod K` — a DRAFT rule: RFC-0004 requires only "deterministic within
+the committee", and the committee *set* is already beacon-seeded, so the
+position adds no grinding surface. The candidate block is a pure function of
+the proposer's L1 view at `cutoff_time` — the pattern engine runs with
+`now ≡ cutoff_time`, never wall clock — so any member recomputes the
+byte-identical block from the same view, and recompute-and-compare *is*
+proposal validation (members whose view lags abstain; 2/3 absorbs the
+stragglers).
+
+### 11.7 · External beacon (drand)
+
+The protocol consumes drand's **default chain** (scheme
+`pedersen-bls-chained`), which is exactly the protocol's own BLS shape
+(§3.3): 48-byte compressed G1 group key, 96-byte G2 signatures, the same
+ciphersuite. One verified round:
+
+```
+round_message = SHA-256( previous_signature ‖ round_be64 )
+verify        : BLS_verify(group_key, round_message, signature)
+randomness    = SHA-256( signature )       ; must equal the published value
+```
+
+SHA-256 here is drand's protocol, accepted as-is per §2.2; the 32-byte
+`randomness` is the round's canonical output and the `drand_round_value` of
+§4.2. Rounds below 2 are out of scope (round 1 of a chained drand network
+signs the network's genesis seed, a different payload shape; an ANTS genesis
+pins `initial_round` well past it, RFC-0010). Which round feeds which block
+is the §4.3 rule: the round whose published time is closest to but not after
+the proposal timestamp, with the 30-second hard floor before degrading.
+
+### 11.8 · Commit-at-send, challenge derivation, answer envelope
+
+**The commit** (RFC-0003 §commit-at-send) — what a producer signs alongside
+every answer:
+
+```
+commit = {
+  1:  root            (bytes 32)  ; §11.4 root over the per-position leaves
+  2:  model_hash      (bytes 32)  ; BLAKE3 of the model artifact
+  3:  input_hash      (bytes 32)  ; BLAKE3 of the request input
+  4:  req_nonce       (bytes 32)  ; requester freshness
+  5:  agent_meas      (bytes 32)  ; TEE measurement (all-zero pending #3, v2.x)
+  6:  round           (uint)      ; PoUH round r; the challenge uses B_{r+1}
+  7:  audit_threshold (uint)      ; floor(p · 2^64) — the audit probability as
+                                  ; fixed-point, keeping the wire float-free
+  8:  m               (uint)      ; positions an audit opens
+  9:  length          (uint)      ; committed positions L
+  10: tier            (uint)      ; 1..3, registry in §11.11
+}
+```
+
+The signature is Ed25519 over the canonical encoding. A Merkle leaf's
+preimage is the position's q24 logit vector serialized little-endian
+(vocab × 4 bytes) followed by `LE64(position)` (§11.4); binding the position
+into the leaf closes relocation attacks.
+
+**Challenge derivation.** All three audit decisions derive from the
+posterior beacon `B_{r+1}` and the commit root through one keystream:
+
+```
+seed      = beacon(32) ‖ root(32) ‖ tag    ; tag ∈ {"sel","pos","aud"} — 3 bytes, no NUL
+block(i)  = BLAKE3( seed ‖ LE64(i) )       ; i = 0, 1, 2, …
+keystream = block(0) ‖ block(1) ‖ …
+W_k       = keystream bytes [8k, 8k+8), read BIG-endian
+```
+
+- **audited?** ⇔ `W_0 < audit_threshold` (tag `"sel"`).
+- **positions:** `M = min(m, L)` contiguous buckets `[⌊jL/M⌋, ⌊(j+1)L/M⌋)`;
+  position j = bucket start + `(W_j mod bucket width)` (tag `"pos"`) —
+  stratified, distinct, strictly ascending.
+- **auditor:** an unbiased index in `[0, n_verifiers)` by rejection sampling
+  over successive words (tag `"aud"`) — no modulo bias.
+
+This keystream supersedes the `ants-v1-beacon-*` derive_key contexts
+reserved by §4.1 in v0.1 (see §10).
+
+**The answer envelope** — what an auditor opens:
+
+```
+answer = {
+  0: input  (bytes)              ; the request x
+  1: tokens (bytes)              ; the L generated tokens, one byte each
+  2: dists  (array(L) of bytes)  ; per-position q24 logit vectors, vocab × 4 bytes LE
+}
+```
+
+The vocab is implied (`dist length / 4`, ≤ 256): a byte vocabulary, so
+`tokens` is unambiguous and the prefix at position j is
+`input ‖ tokens[0..j)`. The audit's integrity gate recomputes the §11.4 root
+over ALL stored dists and requires it to equal `commit.root` before any
+position is scored — one check binds every opening. Reference audit policy:
+Tier 1 commits `audit_threshold = 2^59` (p = 1/32); Tiers 2–3 commit
+`UINT64_MAX` (always auditable on request).
+
+The reference model whose weights produce these distributions is pinned in
+the reference client (magic `ANTSMOD1`) pending an RFC-0009 appendix — see
+§10. The protocol's interop surface is the commit and the envelope, not the
+model.
+
+### 11.9 · Receipts and selective disclosure
+
+**The receipt body** — the bytes both parties sign (RFC-0004 §"The receipt
+that matters for tenure"):
+
+```
+receipt_body = {
+  1: server    (bytes 32)   ; who did the work — accrues A and T
+  2: client    (bytes 32)   ; who countersigns
+  3: ncs_value (uint)       ; μ-NCS (§6)
+  4: timestamp (uint)       ; unix seconds
+  5: nonce     (bytes 16)   ; issuer-fresh anti-replay
+}
+```
+
+A receipt is the body plus `server_sig` and `client_sig`, both Ed25519 over
+the body bytes; a receipt without both valid signatures does not count.
+
+**The receipt bag** commits a peer's history for selective disclosure
+(RFC-0004 §Selective disclosure): leaves per §11.4 with preimage
+`body ‖ server_sig ‖ client_sig` — the whole receipt, so the inclusion proof
+and the countersignature check bind the same bytes. Canonical leaf order is
+**timestamp ascending, ties by leaf-hash ascending** — total and
+deterministic; duplicates are non-canonical. The published commitment binds
+the tree to its peer:
+
+```
+bag_root = BLAKE3.derive_key("ants-v1-receipt-bag-root", peer_id ‖ merkle_root)
+```
+
+An `A ≥ b` proof is a set of openings `(receipt, index, path)`. The verifier
+accepts iff every opening countersignature-verifies, credits this peer, is
+not future-dated, sits at a *distinct* index, and Merkle-verifies against
+`bag_root` — and the openings' decayed-A contributions (the exact recipe of
+RFC-0004's A) sum to at least `b`. Sound as a lower bound: a revealed subset
+understates, never overstates.
+
+### 11.10 · Bond admission
+
+The admission statement a verifier signs when admitting a bond (RFC-0004
+§Bond accounting):
+
+```
+bond_admission = {
+  1: act_id       (bytes 32)
+  2: peer         (bytes 32)   ; whose A is being bonded
+  3: amount       (uint)       ; μ-NCS
+  4: v_id         (bytes 32)   ; the admitting verifier
+  5: l1_view_hash (bytes 32)   ; the verifier's L1 view at admission
+}
+```
+
+Race-safe tie-break (RFC-0004 §Atomicity): when two verifiers admit
+conflicting bonds for the same peer within δ_admission, the admission with
+the **smaller** (bytewise)
+
+```
+tiebreak_key = BLAKE3.derive_key("ants-v1-bond-tiebreak",
+                                 epoch_seed ‖ act_id ‖ v_id ‖ LE64(admission_round))
+```
+
+wins, and the loser gossips a null admission. The epoch seed comes from the
+L2 chain, so favourable timings cannot be precomputed; only loose
+epoch-level clock agreement is required.
+
+### 11.11 · Registries
+
+All append-only; unknown values fail closed.
+
+- **Fault classes** (§11.5): 0 EQUIVOCATION · 1 INVALID_TRANSITION ·
+  ≥ 2 reserved.
+- **Statement domains** (§11.5): none assigned yet. The registry exists so
+  equivocation domains are spec-assigned, never ad-hoc. (The block
+  attestation deliberately signs the naked block hash, *not* a statement
+  envelope — the invalid-transition fault depends on that exact message
+  identity.)
+- **Finding severities** (§11.6): 1 SOFT · 2 MEDIUM · 3 HARD · 4 TERMINAL ·
+  ≥ 5 reserved.
+- **Gossip frame types** (§11.3): 0 PUSH · 1 IHAVE · 2 IWANT.
+- **DHT message types** (§11.2): 1–8 as tabled.
+- **Verification tiers** (§11.8): 1 attestation+sampling · 2 cross-check ·
+  3 triangulation.
+
+Deliberately *not* specified here: the **local ledger record**
+(economy/ledger) — it is private per RFC-0001, never crosses the wire, and
+acquires a spec section only if record interchange ever becomes a protocol
+feature; and the **reference-model weight blob** (§10, RFC-0009's appendix).
+
+---
+
+## 12 · How to contribute
 
 Open an issue on `Ants-Community/ants` with the tag `rfc-0008`. This document
 welcomes two kinds of contribution:

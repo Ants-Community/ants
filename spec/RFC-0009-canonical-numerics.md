@@ -272,9 +272,10 @@ independence, the success probability is `2⁻²⁴ᵛ`. For `V = 32K`,
 `2⁻²⁴ᵛ ≈ 2⁻⁷⁶⁸⁰⁰⁰` — infeasible by any margin we care to compute.
 
 **(c) Birthday on the full Merkle root.** The per-position q24 vectors
-feed into BLAKE3 leaves (`ants-v1-logit-trace-leaf` per RFC-0008 §4.1),
-and the leaves feed into a 32-byte (256-bit) Merkle root
-(`ants-v1-logit-trace-root`). A generic birthday on this root requires
+feed into domain-separated BLAKE3 leaves
+(`leaf = BLAKE3(0x00 ‖ dist_bytes ‖ LE64(position))`, RFC-0008 §11.4/§11.8),
+and the leaves feed into a 32-byte (256-bit) Merkle root. A generic
+birthday on this root requires
 `2¹²⁸` work — the standard 128-bit collision-resistance bound of any
 256-bit hash. q24 is **not** load-bearing for collision resistance at
 the root level; BLAKE3 is. q24 provides the *value-level reproducibility
