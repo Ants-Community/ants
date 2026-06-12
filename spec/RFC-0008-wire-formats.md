@@ -1,6 +1,6 @@
 # RFC-0008 — Wire Formats, Crypto Primitives, and Reference Constants
 
-**Status:** Reference · v0.6 (living standard)
+**Status:** Reference · v0.7 (living standard)
 **Topic:** The concrete byte-level choices the protocol makes once and refers to from everywhere else.
 **Audience:** You, if you are about to write code.
 **Depends on:** all design RFCs (this document is the implementation glue between them).
@@ -556,6 +556,8 @@ changes within a major version are permitted.
 | `GOSSIP_MAX_FRAME_BYTES` | §11.3 | 4096 (receiver default; local policy) | C |
 | `GOSSIP_MAX_IDS_PER_DIGEST` | §11.3 | 64 (an IHAVE/IWANT naming more is malformed) | P |
 | `RECEIPT_NONCE_BYTES` | RFC-0004 §The receipt; §11.9 | 16 | P |
+| `SUMMARY_MAX_BUCKETS` | RFC-0004 §Compact summaries; §11.9 | 256 (a summary naming more is malformed) | P |
+| `SUMMARY_BUCKET_WIDTH` | RFC-0004 §Compact summaries; §11.9 | 86400 s (1 day; DRAFT default — granularity is calibratable) | C |
 
 Pinned values that change require a major version increment. Calibratable
 values change within the version via amendment to the corresponding RFC, with
@@ -597,7 +599,8 @@ Vector categories (each with multiple instances):
 - DHT RPC and gossip frame round-trips (§11.2–§11.3)
 - L2 chain objects: epoch summaries, blocks, the confirmed-proofs Merkle
   root and inclusion paths (§11.6)
-- Receipt bodies and receipt-bag inclusion proofs (§11.9)
+- Receipt bodies, receipt-bag inclusion proofs, and compact summaries
+  (§11.9)
 
 These vectors are the *implementation-level* spec. Any client that produces
 different output for the same vector input is non-conformant.
@@ -1071,6 +1074,55 @@ not future-dated, sits at a *distinct* index, and Merkle-verifies against
 `bag_root` — and the openings' decayed-A contributions (the exact recipe of
 RFC-0004's A) sum to at least `b`. Sound as a lower bound: a revealed subset
 understates, never overstates.
+
+**The compact summary** (RFC-0004 §Compact summaries for large peers) is the
+signed bucket hint a large peer publishes to cut per-admission verification
+cost. The signed body:
+
+```
+summary_body = {
+  1: peer_id      (bytes 32)   ; whose bag — also the signature's verify key
+  2: bag_root     (bytes 32)   ; the bag commitment this summary binds
+  3: eval_time    (uint)       ; unix seconds — the decay evaluation time
+  4: bucket_width (uint)       ; seconds, > 0 (SUMMARY_BUCKET_WIDTH default)
+  5: buckets      (array of [bucket_index (uint), total (uint)] pairs)
+}
+```
+
+The full wire object re-keys the same five pairs as a 6-pair map and adds
+`6: sig (bytes 64)` — the peer's Ed25519 signature over the body bytes.
+Single-signed: the summary is the peer's own statement about its own bag.
+
+Semantics and canonical form:
+
+- `bucket_index = timestamp / bucket_width` (integer division); `total` is
+  the Σ of that bucket's receipts' decayed-A contributions (RFC-0004's exact
+  A recipe), evaluated **at `eval_time`**, under exactly A's eligibility
+  filter: both signatures valid, credits this peer, not dated after
+  `eval_time`.
+- Strictly ascending `bucket_index`, no zero totals (an empty bucket is
+  OMITTED), at most `SUMMARY_MAX_BUCKETS` buckets — one encoding per
+  content, the same discipline as the bag's canonical leaf order.
+- RFC-0004's "committed via the same Merkle root" is realised by key 2: the
+  signed body *includes* `bag_root`. (A summary leaf inside the tree would
+  make the root self-referential.)
+- Totals are **not** re-decayable to a later time: the fixed-point decay
+  recipe is a pinned repeated multiplication and is not associative, so
+  `factor(a+b)` ≠ `fp_mul(factor(a), factor(b))` in general. Audits
+  recompute at the summary's own `eval_time`, bit-exactly; a consumer that
+  wants fresher numbers asks the peer for a fresher summary.
+
+The summary is a **hint**, not a security primitive: no A or T computation
+consumes it. The random audit (RFC-0004: "the verifier may still require
+selective disclosure of individual receipts to confirm specific buckets")
+names a bucket the summary *states*; the peer answers with openings from
+that bucket; the audit passes iff every opening verifies as for `A ≥ b`,
+additionally falls in the audited bucket and is not dated after
+`eval_time`, and the contributions at `eval_time` sum to **at least** the
+stated total. Exceeding the stated total merely means the summary
+understated — the safe direction. A signed summary stating a bucket its
+receipts cannot substantiate is equivocation against the peer's own
+signature — an attributable fault (RFC-0004).
 
 ### 11.10 · Bond admission
 
