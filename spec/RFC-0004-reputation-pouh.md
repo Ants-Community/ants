@@ -1,7 +1,7 @@
 # RFC-0004 — Reputation: Two Layers, One Architecture
 
-**Status:** Draft · v0.6
-**Topic:** A reputation system in two layers — a consensus-free CRDT of self-authenticating fault proofs for individual slashing, and a small slow Proof-of-Unique-Hardware (PoUH) chain as ordered witness for pattern-based rules. The chain confirms what has happened. It does not create what happens. v0.3 added **A-as-bond for high-stakes acts**, v0.4 specified the **bond accounting model** and the fork-recovery bond formula. v0.5 closes four BLOCK items surfaced by the multi-persona external review: **G-Set pruning** with late-joiner protocol (N1), **partition recovery** with equivocation slashing and Σ-T fork choice (N2), **selective disclosure of receipts** as a first-class mechanism (N6, fixing previously-broken "RFC-0003-b" cross-references), and a **race-safe bond admission protocol** that does not require synchronised clocks.
+**Status:** Draft · v0.7
+**Topic:** A reputation system in two layers — a consensus-free CRDT of self-authenticating fault proofs for individual slashing, and a small slow Proof-of-Unique-Hardware (PoUH) chain as ordered witness for pattern-based rules. The chain confirms what has happened. It does not create what happens. v0.3 added **A-as-bond for high-stakes acts**, v0.4 specified the **bond accounting model** and the fork-recovery bond formula. v0.5 closes four BLOCK items surfaced by the multi-persona external review: **G-Set pruning** with late-joiner protocol (N1), **partition recovery** with equivocation slashing and Σ-T fork choice (N2), **selective disclosure of receipts** as a first-class mechanism (N6, fixing previously-broken "RFC-0003-b" cross-references), and a **race-safe bond admission protocol** that does not require synchronised clocks. v0.7 makes committee fabrication **attributable**: the `invalid-transition` fault class as a signer-attributable, self-contained Layer-1 proof (§"Fabrication is attributable").
 **Audience:** You, if you have read enough blockchain whitepapers to be skeptical of one more — and willing to read another.
 **Depends on:** [RFC-0003](./RFC-0003-verification.md), [RFC-0005](./RFC-0005-identity.md)
 
@@ -382,6 +382,59 @@ committee picks up the missed evidence.
 
 This is the load-bearing property. **The chain's compromise scenario is
 degradation, not corruption.**
+
+### Fabrication is attributable: the invalid-transition fault
+
+"Trivially detectable" can be made stronger: the detection itself can be a
+self-authenticating Layer-1 fact. The `invalid-transition` fault class — the
+second class of the Layer-1 enumeration, reserved since the G-Set was first
+specified — is defined as:
+
+> **The subject signed the hash of a block whose epoch summary commits, in its
+> `confirmed_proofs` Merkle root, bytes that are not a valid fault proof.**
+
+The evidence is self-contained: the complete canonical block, the subject's
+signature over its hash, the cited committed bytes, and their Merkle inclusion
+path. `VERIFY` re-derives everything from the bytes — one signature check, one
+inclusion fold, and the cited bytes' own `VERIFY` verdict — and stays pure,
+deterministic, and context-free.
+
+Two deliberate narrowings make this possible. Both are the honest shape of the
+problem, not compromises:
+
+- **Signer-attributable, not committee-attributable.** Deriving whether the
+  signer was a *legitimate committee member* requires the attested population
+  and the beacon at that height — Layer-2 context a context-free VERIFY cannot
+  reach. It does not need to: signing a fabricating block is the culpable act
+  regardless of membership, exactly as signing two conflicting statements is.
+  A non-member who signs a fabricating block has still attested to a false
+  slash. An honest member never signs one, because its candidate block is
+  recomputed from its own G-Set, every element of which passed VERIFY at
+  insert — recompute-and-compare *is* proposal validation. Block finality is
+  likewise not required: the fault is the signature, not the block's success.
+
+- **No nesting.** A cited proof may be of any class except
+  `invalid-transition` itself — the structural bound that keeps VERIFY
+  non-recursive. The cost, stated plainly: committing an *invalid*
+  invalid-transition proof is real fabrication this class cannot cite; that
+  narrow case stays in the detectable-but-not-attributable regime, alongside
+  omission.
+
+Cross-version safety is the load-bearing detail. The verdict on the cited
+bytes must be *permanent* before it can ground a slash. A citation that fails
+to decode under the pinned canonical-CBOR profile (RFC-0008 §1.1 — the wire's
+foundation, which cannot grow without breaking canonicality everywhere), or
+that a deployed class's never-changing rules reject, is permanently invalid:
+the fault stands. A citation of a class the verifying build does not know is a
+typed "don't know" — never a slash — so no build, past or future, ever admits
+a proof whose citation another build deems valid.
+
+What this closes, and what it does not: a compromised committee's
+*fabrication* now costs the fabricators their identities the moment one honest
+peer sees the block — Layer 1's strongest deterrent, propagating on the same
+one-honest-path guarantee as every other fault proof. *Suppression* and
+*omission* remain non-attributable (censorship has no signature) and remain
+recovered by the next epoch's committee, exactly as above.
 
 ### Graceful degradation
 

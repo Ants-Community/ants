@@ -6,6 +6,16 @@ amendments are. Each entry states what was, what is now, and why.
 
 ---
 
+## RFC-0004 v0.7 — Committee fabrication made attributable: the invalid-transition fault · 2026-06-12
+
+**Was:** §"Why the committee cannot fabricate" argued fabrication is "trivially detectable by any peer running VERIFY independently" — detectable, but not *attributable*: the `invalid-transition` fault class had been reserved in the Layer-1 enumeration since Component #7 PR1 with no specified semantics, pending the L2 chain. The recorded design fork: (i) self-contained block evidence — but checking block *finality* needs the committee's public keys, which need the attested population and the beacon, i.e. Layer-2 context a context-free VERIFY cannot reach; vs (ii) an L2-side fault class outside the G-Set contract — keeping Layer 1 pure but losing the one-honest-path propagation guarantee for exactly the fault that polices Layer 2.
+
+**Is now:** RFC-0004 v0.7 §"Fabrication is attributable" specifies the class as a **signer-attributable fabrication proof**, a third shape that dissolves the fork: the fault is *"the subject signed the hash of a block whose epoch summary commits, in its confirmed_proofs root, bytes that are not a valid fault proof"* — requiring neither membership derivation nor finality, because the signature is the culpable act, exactly as an equivocation signature is. Evidence is self-contained (canonical block + signature over its hash + cited bytes + Merkle inclusion path); VERIFY stays pure, deterministic, context-free. Honest members are structurally safe: their candidate blocks are recomputed from their own VERIFY-gated G-Sets (recompute-and-compare is proposal validation). Two bounds are stated honestly — no nesting (a citation cannot itself be invalid-transition; committing an invalid invalid-transition proof stays detectable-but-not-attributable, like omission) and cross-version permanence (decode failure under the pinned RFC-0008 §1.1 profile and deployed-class MALFORMED verdicts are permanent → slashable; an unknown-class citation is a typed "don't know" → never a slash, so no build ever admits a proof whose citation another build deems valid).
+
+**Why:** This was the last reserved Layer-1 fault class whose dependencies (the Component #8 block/Merkle codecs) now exist, and resolving it turns the chain's load-bearing property — "the committee cannot fabricate" — from an argument about detectability into an enforced economic fact: fabrication costs the fabricators their identities the moment one honest peer sees the block, propagating on the same one-honest-path guarantee as every other fault proof, with no new propagation channel and no weakening of the Layer-1 contract. Reference implementation: ants-client `reputation/crdt` (VERIFY + encoder), cross-checked bit-for-bit against the `reputation/chain` Merkle and block codecs.
+
+---
+
 ## RFC-0005 v0.2 — Anti-eclipse peer sampling specified · 2026-06-02
 
 **Was:** Anti-eclipse peer selection was named as RFC-0005's responsibility by RFC-0004 (§"What we have not figured out yet") but left unspecified: the gossip overlay's view (Component #6) was caller-managed with no defined source, so the one-honest-path property it underwrites had no mechanism behind it.
