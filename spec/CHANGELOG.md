@@ -6,6 +6,53 @@ amendments are. Each entry states what was, what is now, and why.
 
 ---
 
+## IMPLEMENTATION.md — TEE attestation (#3) un-deferred from v2.x into v1 · 2026-06-15
+
+**Was:** The component #3 row, the critical-path section, the Phase-A
+deliverable, and the parallel-work list all marked the TEE attestation harness
+**"Targeted v2.x, not v1.0"** and **"deferred to v2.x per RFC-0005's
+hardware-trust timeline (2030-2032)"**, with v1 shipping only a
+`NOT_IMPLEMENTED` stub and verifiability resting on the other three legs of
+RFC-0002 (re-execution, scheme (C), reputation). This was internally
+inconsistent with RFC-0005, which assumes closed-vendor attestation is live
+throughout the v1 era ("Until then, all attestation flows through the five
+named closed-vendor families") and builds its entire Sybil-economics table and
+2028-2030-window analysis on that assumption.
+
+**Is now:** #3 is a **v1 deliverable**, and the roadmap records *why the
+earlier deferral was wrong*. The TEE does two jobs and the deferral conflated
+them. As the fourth *verifiability* leg (RFC-0002) it is genuinely optional —
+the other three legs suffice, and that part of the reasoning stands. But as the
+*identity root* it is not optional: RFC-0005's "one attested CPU, one peer
+identity" and RFC-0004's "one CPU, one voice" validator pool both reduce to
+*the attested population*, and with only the stub that population is every
+freely-generated Ed25519 keypair — the L2 committee selection, the
+per-attested-identity rate limits, and the Sybil-cost table are all unenforced.
+The 2030-2032 horizon is RFC-0005's *open-hardware* migration
+(Keystone/OpenTitan), not a justification for deferring closed-vendor
+attestation. v1 staging: the two mature, publicly-auditable x86-server roots
+**Intel TDX + AMD SEV-SNP** first (~2.4 of the component's 6 EM); ARM CCA, Apple
+SE, Qualcomm follow as the device population broadens (v1.x). #3 stays
+foundation-layer and parallelisable, so the `#7→#8→#13→#15` critical-path
+length is unchanged — but it is now a prerequisite for integration testing and
+the first testnet.
+
+**Why:** A permissionless protocol whose identity root is a stub has no
+hardware Sybil resistance at all — "one keypair, one voice" — a materially
+different security posture from the one RFC-0005 advertises, and the corpus
+stated both. The inconsistency is resolved toward RFC-0005 (the document that
+owns identity) rather than toward the roadmap's deferral note. This reverses
+the 2026-05-21 re-scoping that moved #3 to v2.x and dropped the v1 critical path
+from 22 to 16 EM; the 16 EM chain is unaffected (TEE parallelises), but TEE is
+no longer optional for a v1 that intends to ignite a trust-bearing network.
+Quote *verification* is offline- and vector-testable on commodity hardware (the
+security-critical path every peer runs); only quote *generation* and
+end-to-end attestation need confidential-compute hardware, and are staged
+accordingly. No RFC text changes — RFC-0005 already assumed this; only the
+roadmap is brought into line.
+
+---
+
 ## RFC-0008 v0.8 — ants-embed-v1 pinned to the BGE-M3 F32 GGUF · 2026-06-15
 
 **Was:** §5 named the canonical embedding model by three values
