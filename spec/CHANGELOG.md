@@ -6,6 +6,40 @@ amendments are. Each entry states what was, what is now, and why.
 
 ---
 
+## RFC-0008 v0.8 — ants-embed-v1 pinned to the BGE-M3 F32 GGUF · 2026-06-15
+
+**Was:** §5 named the canonical embedding model by three values
+(`embedding_model_id`, `_arch`, `_weights_hash`, `_tokenizer_hash`) but left the
+two 32-byte hashes as `0x000…000` placeholders "to be set when the reference
+client is published", and defined `_weights_hash = BLAKE3(canonical_safetensors_file)`.
+The reference client's `cache/embedding` loader, however, consumes **GGUF**, not
+safetensors — so the placeholders were unpinnable as written, and the artifact
+the spec described was not the artifact a peer actually loads.
+
+**Is now:** §5 pins the v1 values against the artifact the client loads. New
+§5.1 records `embedding_model_weights_hash = 3055cf6c…5b0d26e6` (BLAKE3 of the
+canonical **BGE-M3 F32 GGUF**, 2 273 655 072 bytes) and
+`embedding_model_tokenizer_hash = a085385b…e1269cee` (BLAKE3 of the official
+`BAAI/bge-m3` `tokenizer.json`, 17 098 108 bytes). The weights-hash definition
+moves from "safetensors file" to "the canonical GGUF file the client loads";
+provenance is documented (source = official `BAAI/bge-m3`; obtain =
+`CompendiumLabs/bge-m3-gguf` `bge-m3-f32.gguf`, or reproduce via `llama.cpp`'s
+`convert_hf_to_gguf.py --outtype f32`); precision is pinned to **F32** (any
+quantized derivative is a different artifact, not `ants-embed-v1`); and the
+embedding procedure is stated (tokenize → wrap `<s> … </s>` → BGE-M3 forward →
+CLS-pool the `<s>` state → L2-normalize). A note separates the *pinned weights
+file* (bit-exact, cross-platform) from *embedding-output* determinism (F32
+reduction order — the open RFC-0009 problem).
+
+**Why:** The reference client's BGE-M3 bring-up made the canonical embedding
+real: the forward pass was validated against `llama.cpp` (cosine ≥ 0.999999) on
+this exact F32 GGUF, and `ants_embed_init` now strictly verifies both hashes.
+Pinning the model is a protocol-version-boundary act (RFC-0008 §9), and the
+safetensors-vs-GGUF mismatch was a latent spec-vs-implementation divergence —
+closed here toward the artifact the client actually loads, the same
+direction-of-authority the v0.6/v0.7 upstreaming established. This is the last
+spec-side piece of Component #11 (canonical embedding service).
+
 ## RFC-0008 v0.7 — Compact-summary encoding (§11.9) · 2026-06-12
 
 **Was:** RFC-0004 §"Compact summaries for large peers" specified the *mechanism* — a signed list of `(time_bucket, total_decayed_value)` pairs, committed via the same Merkle root, auditable bucket-by-bucket, false buckets being equivocation — but no wire encoding existed: §11.9 covered the receipt body, the bag commitment, and the `A ≥ b` openings, and stopped there. Two questions the prose left under-determined for an implementer: what "committed via the same Merkle root" means operationally (a summary leaf inside the tree would make the root self-referential), and *at what time* the bucket totals' decay is evaluated — load-bearing because the pinned q32 decay is a repeated multiplication and not associative, so totals re-decayed to a later time would drift from a fresh recompute by rounding and never compare bit-exactly.

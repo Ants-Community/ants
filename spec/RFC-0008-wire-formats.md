@@ -1,6 +1,6 @@
 # RFC-0008 — Wire Formats, Crypto Primitives, and Reference Constants
 
-**Status:** Reference · v0.7 (living standard)
+**Status:** Reference · v0.8 (living standard)
 **Topic:** The concrete byte-level choices the protocol makes once and refers to from everywhere else.
 **Audience:** You, if you are about to write code.
 **Depends on:** all design RFCs (this document is the implementation glue between them).
@@ -447,22 +447,63 @@ inputs. The canonical model is specified as a *pinned checkpoint*, identified
 by three values:
 
 ```
-embedding_model_id        = "ants-embed-v1"
-embedding_model_arch      = "bge-m3"            (architecture family)
-embedding_model_weights_hash = BLAKE3(canonical_safetensors_file)
+embedding_model_id             = "ants-embed-v1"
+embedding_model_arch           = "bge-m3"            (architecture family)
+embedding_model_weights_hash   = BLAKE3(canonical_weights_file)
 embedding_model_tokenizer_hash = BLAKE3(canonical_tokenizer_json)
 ```
 
-The `embedding_model_weights_hash` and `embedding_model_tokenizer_hash` are
-**pinned at the protocol-version boundary**. The specific 32-byte values for
-v1 will be set when the reference client is published, computed against the
-exact BGE-M3 checkpoint and tokenizer the reference client ships with. Until
-then, they are `0x000…000` placeholders.
+### 5.1 · v1 pinned values
 
-A peer that wishes to claim `embedding_model_id = "ants-embed-v1"` MUST be
-running a model whose safetensors-encoded weights hash to the pinned value and
-whose tokenizer JSON hashes to the pinned tokenizer value. There is no
-"close enough" — bit-exact match or rejection.
+With the reference client's BGE-M3 bring-up, the v1 values are **pinned** (no
+longer `0x000…000` placeholders):
+
+```
+embedding_model_id             = "ants-embed-v1"
+embedding_model_arch           = "bge-m3"
+embedding_model_weights_hash   =
+    3055cf6c5ec0b41da5c867cf0ca0b1831a985168df8352645b04dcb85b0d26e6
+embedding_model_tokenizer_hash =
+    a085385b8b6f4a3f16a3493c180e694f92897e919d00aa9b3cd7fbffe1269cee
+```
+
+**Canonical weights file.** `embedding_model_weights_hash` is the BLAKE3 of the
+canonical **GGUF** file the reference client loads — not the original PyTorch
+checkpoint. The `cache/embedding` loader parses GGUF, so the GGUF *is* the
+artifact every peer must agree on byte-for-byte:
+
+- **Format / precision:** GGUF, **F32** — no quantization, for maximal
+  cross-peer reproducibility. Any quantized derivative (Q8_0, F16, …) is a
+  different artifact with a different hash and is **not** `ants-embed-v1`.
+- **Size:** 2 273 655 072 bytes.
+- **Architecture:** BERT-family encoder (XLM-RoBERTa): 24 layers, hidden 1024,
+  16 heads, FFN 4096, 8192 context positions, vocab 250 002, type-vocab 1,
+  LayerNorm ε = 1e-5.
+- **Source weights:** the official `BAAI/bge-m3` checkpoint.
+- **Obtain:** `CompendiumLabs/bge-m3-gguf` → `bge-m3-f32.gguf`, or reproduce
+  from the `BAAI/bge-m3` weights via `llama.cpp`'s
+  `convert_hf_to_gguf.py --outtype f32`. GGUF byte-layout depends on the
+  converter version, so the hash above pins **one specific file**; peers fetch
+  that file and verify the hash — reproduction from source is a verification
+  aid, not a requirement.
+
+**Canonical tokenizer.** `embedding_model_tokenizer_hash` is the BLAKE3 of the
+official `BAAI/bge-m3` `tokenizer.json` (HuggingFace fast-tokenizer format,
+Unigram / SentencePiece), 17 098 108 bytes.
+
+**Embedding procedure.** A conformant peer: tokenizes input with the pinned
+tokenizer (the Unigram encoder emits content pieces only); wraps them as
+`<s> … </s>` (XLM-R special-token ids 0 and 2); runs the BGE-M3 forward; takes
+the `<s>` hidden state (CLS pooling) as the 1024-dim dense vector; and
+L2-normalizes. See RFC-0002 §The canonical embedding model and the
+`embedding` test-vector pack.
+
+A peer that claims `embedding_model_id = "ants-embed-v1"` MUST run a model whose
+canonical GGUF weights hash to the pinned value and whose tokenizer JSON hashes
+to the pinned tokenizer value — bit-exact match or rejection, no "close enough".
+(Note: pinning the *weights file* is distinct from cross-platform determinism of
+the *embedding output*, which depends on F32 reduction order; that remains the
+open problem tracked in RFC-0009 canonical numerics.)
 
 Future versions (`ants-embed-v2`) are introduced via the embedding-model
 governance process specified in RFC-0002 v0.2 (forthcoming amendment). That
