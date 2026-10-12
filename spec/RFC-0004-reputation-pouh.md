@@ -1,6 +1,6 @@
 # RFC-0004 — Reputation: Two Layers, One Architecture
 
-**Status:** Draft · v0.9
+**Status:** Draft · v0.10
 **Topic:** A reputation system in two layers — a consensus-free CRDT of self-authenticating fault proofs for individual slashing, and a small slow Proof-of-Unique-Hardware (PoUH) chain as ordered witness for pattern-based rules. The chain confirms what has happened. It does not create what happens. v0.3 added **A-as-bond for high-stakes acts**, v0.4 specified the **bond accounting model** and the fork-recovery bond formula. v0.5 closes four BLOCK items surfaced by the multi-persona external review: **G-Set pruning** with late-joiner protocol (N1), **partition recovery** with equivocation slashing and Σ-T fork choice (N2), **selective disclosure of receipts** as a first-class mechanism (N6, fixing previously-broken "RFC-0003-b" cross-references), and a **race-safe bond admission protocol** that does not require synchronised clocks. v0.7 makes committee fabrication **attributable**: the `invalid-transition` fault class as a signer-attributable, self-contained Layer-1 proof (§"Fabrication is attributable").
 **Audience:** You, if you have read enough blockchain whitepapers to be skeptical of one more — and willing to read another.
 **Depends on:** [RFC-0003](./RFC-0003-verification.md), [RFC-0005](./RFC-0005-identity.md)
@@ -198,7 +198,10 @@ historical proofs. Instead:
    proof sets active at each cutoff. This is the bounded-size record
    (small constant per epoch).
 2. **Sync the current L1 CRDT**: only proofs from the active epoch plus
-   the previous one. Small steady-state size.
+   the previous one. Small steady-state size. *(v0.10: in v1 the chain's
+   view window is `L1_VIEW_WINDOW_EPOCHS` = 30 epochs — §Block production
+   runtime items 9-10 — so a late joiner that will compose or check blocks
+   syncs that window.)*
 3. **For any historical "is X slashed?" query**: look up `X` in the L2
    chain's index of slashed identities (every epoch summary lists subjects
    whose proofs it confirmed). Find the epoch where `X` was first slashed,
@@ -395,9 +398,12 @@ time) at start.
 9. **The Layer-1 view at a cutoff** *(v0.9; v1 rule)*. The reference sketch
    below filters proofs by `signed_at`, but a fault-proof envelope (RFC-0008
    §11.5) carries an `epoch`, not a signing time. In v1 a proof in the node's
-   G-Set is **visible at `cutoff` iff its epoch has begun by then** —
-   `genesis_time + epoch · EPOCH_DURATION ≤ cutoff` — and its event time, for
-   the pattern windows, is that epoch's start. The confirmed-proofs root is
+   G-Set is **visible at `cutoff` iff its epoch lies in the view window**
+   `[e − (L1_VIEW_WINDOW_EPOCHS − 1), e]`, where `e` is the cutoff's epoch
+   (`(cutoff − genesis_time) / EPOCH_DURATION`) *(v0.10: the window;
+   v0.9 had no lower bound)* — and its event time, for the pattern windows,
+   is that epoch's start. `L1_VIEW_WINDOW_EPOCHS` = 30 is the pattern rules'
+   window, so "N events in 30 days" still sees 30 days. The confirmed-proofs root is
    over the visible proofs' content-ids in ascending order (RFC-0008 §11.6).
    Known limits, stated so that two implementations agree on the rule *and*
    on what it does not do:
@@ -409,11 +415,43 @@ time) at start.
      (§Layer 1), whose unit is the statement domain's, not the chain's — a
      subject can choose it, so the visibility and event time of its own
      fault are only as meaningful as that domain's epochs;
-   - the visible set is bounded only by G-Set pruning (§G-Set pruning); until
-     pruning is wired to L2 confirmation a peer that floods the G-Set can
-     grow every view past an implementation's bound and halt production.
+   - the window bounds the view in time, not in volume: a peer that floods
+     the G-Set with proofs inside the window can still grow every view past
+     an implementation's bound and halt production until those proofs age
+     out of it.
    A signed issuance time in the envelope would remove the first two; it is a
    Layer-1 wire change, evaluated separately.
+
+10. **Pruning** *(v0.10)*. After a block is final, a node may prune every
+    proof whose epoch is below `E − L1_VIEW_WINDOW_EPOCHS`, where `E` is the
+    epoch of the block's **cutoff**, computed by the node from its own
+    genesis and never later than its own clock's epoch (not the block's
+    claimed `epoch` field: the prune floor below is monotone, and a
+    dishonest quorum finalising a block from the far future must not push it
+    past live proofs). Such a proof is outside the window of any block the
+    node can still compose or sign (its attempts never go back in time),
+    with one epoch of margin — the §G-Set pruning "one-epoch delay for
+    cross-checking". An **archive** node never prunes. Pruning is peer-local
+    and never changes a block: pruned and archive nodes see the same window.
+    Consequences a node MUST honour:
+    - **pruned history is not news.** The node keeps its highest prune
+      cutoff as a floor and never stores a proof below it. Such a proof
+      against a subject the node already holds slashed — an archive
+      replaying history, or anyone else — is treated like a duplicate: not
+      forwarded, not counted against the sender; otherwise every prune would
+      be followed by a re-flood of the pruned history;
+    - **but a new slash below the floor is news.** An envelope epoch is not
+      an issuance time (an equivocation's is the statement's, chosen by the
+      subject), so a valid proof below the floor against a subject the node
+      does *not* yet hold slashed is a fault it has never seen: the subject
+      becomes slashed and the proof is forwarded — still not stored;
+    - **pruning does not un-slash.** A subject whose proofs were pruned stays
+      slashed for the node's local queries (it retains the subject's
+      peer-id), the safe direction until the L2 slashed-subject index of
+      §Late-joiner protocol exists;
+    - a node SHOULD advertise (lazy-pull IHAVE) only proofs inside the
+      current window: older ones are history its neighbours may have pruned
+      and would otherwise pull and drop every round.
 
 Holders re-broadcast an open attempt's proposal and their own attestation
 every `CHAIN_GOSSIP_DEDUP_S` until the attempt ends (RFC-0008 §11.13).

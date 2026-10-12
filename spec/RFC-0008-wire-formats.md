@@ -1,6 +1,6 @@
 # RFC-0008 — Wire Formats, Crypto Primitives, and Reference Constants
 
-**Status:** Reference · v0.11 (living standard)
+**Status:** Reference · v0.12 (living standard)
 **Topic:** The concrete byte-level choices the protocol makes once and refers to from everywhere else.
 **Audience:** You, if you are about to write code.
 **Depends on:** all design RFCs (this document is the implementation glue between them).
@@ -599,6 +599,7 @@ changes within a major version are permitted.
 | `CHAIN_GOSSIP_DEDUP_S` | §11.13 | 10 s (the re-broadcast interval) | C |
 | `CHAIN_MAX_BLOCK_FRAME_BYTES` | §11.13 | 32768 (a larger BLOCK frame is malformed) | P |
 | `CHAIN_CUTOFF_SKEW_S` | RFC-0004 §Block production runtime | 10 s (how far ahead of a member's clock a proposal's cutoff may lie) | C |
+| `L1_VIEW_WINDOW_EPOCHS` | RFC-0004 §Block production runtime items 9-10 | 30 (the pattern window; proofs below head epoch − 30 are prunable) | P |
 | `PHASE1_COMMITTEE_K` | RFC-0010 §Phase 1; RFC-0004 §Block production runtime | 5 (k = min(N, 5)) | C |
 | `RECEIPT_NONCE_BYTES` | RFC-0004 §The receipt; §11.9 | 16 | P |
 | `SUMMARY_MAX_BUCKETS` | RFC-0004 §Compact summaries; §11.9 | 256 (a summary naming more is malformed) | P |
