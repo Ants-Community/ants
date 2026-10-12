@@ -16,7 +16,7 @@ amendments are. Each entry states what was, what is now, and why.
 - INFER_REQ (11) carries `{0: input, 1: tier, 2: req_nonce}`; INFER_RESP (12) carries `{}` (declined) or `{0: commit, 1: sig, 2: envelope}`. Both ride the §11.2 envelope, one exchange per bidi stream. Both maps are closed.
 - A producer may decline anything, and declining is never a fault. When it answers, it signs with its peer identity key, sets `round` to its Layer-2 head height, and echoes the input byte for byte.
 - The signing key is the connection's TLS-authenticated peer-id, never a key on the wire, so a relayed answer fails.
-- The requester gets one of three verdicts: answered, declined or rejected. Answered means the signature, the match with the request, the envelope shape and the §11.8 integrity gate all hold. These checks need no beacon; the audit comes later.
+- The requester gets one of three verdicts: answered, declined or rejected. Answered means the signature, the match with the request, the envelope shape (`1 ≤ m ≤ length`, vocab ≤ 256), the tier's audit policy (Tiers 2–3 always auditable, Tier 1 at least the requester's floor) and the §11.8 integrity gate all hold. A requester SHOULD also reject an answer its rerun of the model could not score. These checks need no beacon; the audit comes later.
 
 *§11.1, §11.11.* Stream discipline for inference. Registry types 11 and 12.
 
@@ -30,6 +30,7 @@ amendments are. Each entry states what was, what is now, and why.
 **Why:**
 - **Founder decisions, 2026-10-12.** Serving before receipts and bonds (PR8a, then PR8b). The full envelope travels in the response, so a requester can audit on its own and the producer keeps no state. The model comes from a pinned generator, not a file.
 - Receipts (§11.9) and their countersignature round-trip are deliberately left for the next version.
+- **Adversarial review of the reference implementation** found the audit-dodging answers that the m, vocab, tier-policy and context rules close. Each one was signed and root-consistent, so it was answered, yet the audit could only refuse it, never reach a fraud verdict: `m = 0`, vocab 1024, a Tier-2 commit with `audit_threshold = 0`, and a prefix past the model's context.
 
 ## RFC-0004 v0.10 + RFC-0008 v0.12 — the Layer-1 view window and pruning · 2026-10-12
 

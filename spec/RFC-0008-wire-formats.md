@@ -1490,13 +1490,25 @@ message, the same rule as §11.12. A relayed answer therefore fails the check.
    `req_nonce`, the same `tier`;
 3. `envelope` decodes canonically, its `input` equals the request's `input`,
    and its token count and distribution count both equal `commit.length`,
-   with `1 ≤ length ≤ INFER_MAX_POSITIONS` and `m ≤ length`;
-4. the integrity gate of §11.8 holds: the §11.4 root recomputed over every
+   with `1 ≤ length ≤ INFER_MAX_POSITIONS`, `1 ≤ m ≤ length`, and a byte
+   vocabulary (every distribution `vocab × 4` bytes with `vocab ≤ 256`,
+   §11.8);
+4. the commit carries the audit policy its tier promises: Tiers 2–3
+   `audit_threshold = 2⁶⁴ − 1` (always auditable); Tier 1 at least the
+   requester's sampling floor (the reference requester's is `2⁵⁹`, its own
+   Tier-1 rate);
+5. the integrity gate of §11.8 holds: the §11.4 root recomputed over every
    distribution in the envelope equals `commit.root`.
+
+A requester SHOULD also reject an answer its rerun of `model_hash` could
+not score — one it could only refuse, never judge — because a producer that
+signs such an answer has dodged its audit. For the v1 reference model that
+is a prefix beyond its 64-token context: the input (truncated to its first
+63 bytes, as the reference model reads it) plus `length` above 64.
 
 The verdicts are three:
 
-- **answered** — all four checks pass;
+- **answered** — all five checks pass;
 - **declined** — the body is empty;
 - **rejected** — any check fails, or the INFER_RESP is malformed (it does not
   decode, breaks a limit, or echoes the wrong `txid`).
