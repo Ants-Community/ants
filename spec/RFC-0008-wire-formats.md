@@ -1,6 +1,6 @@
 # RFC-0008 — Wire Formats, Crypto Primitives, and Reference Constants
 
-**Status:** Reference · v0.12 (living standard)
+**Status:** Reference · v0.13 (living standard)
 **Topic:** The concrete byte-level choices the protocol makes once and refers to from everywhere else.
 **Audience:** You, if you are about to write code.
 **Depends on:** all design RFCs (this document is the implementation glue between them).
@@ -607,6 +607,9 @@ changes within a major version are permitted.
 | `ATTESTATION_CLOCK_SKEW` | RFC-0005 §Attestation freshness window; §11.12 | 300 s (an `issued_at` further in the future is rejected) | C |
 | `ATTESTATION_MAX_BLOB_BYTES` | §11.12 | 16384 (a larger blob is malformed) | P |
 | `ATTESTATION_MAX_RESP_BYTES` | §11.12 | 20480 (a larger ATTEST_RESP is malformed) | P |
+| `INFER_MAX_INPUT_BYTES` | §11.14 | 4096 (a larger request input is malformed) | P |
+| `INFER_MAX_POSITIONS` | §11.14 | 64 (an answer committing more positions is rejected) | P |
+| `INFER_MAX_RESP_BYTES` | §11.14 | 131072 (a larger INFER_RESP is malformed) | P |
 
 Pinned values that change require a major version increment. Calibratable
 values change within the version via amendment to the corresponding RFC, with
@@ -703,7 +706,20 @@ not bundle unrelated changes.
   the reference client pending an RFC-0009 reference-model appendix. It is
   deliberately *not* specified here: the model is illustrative and swaps
   behind the reference-distribution seam — the protocol's interop surface is
-  the commit and the answer envelope (§11.8), not the model.
+  the commit and the answer envelope (§11.8), not the model. *(v0.13)* The
+  reference client builds the blob from a pinned deterministic generator, so
+  every reference node serves the same `model_hash` and can audit any other.
+- **The beacon for an inference round in the v1 chain** *(v0.13)*. RFC-0003
+  derives the audit from `B_{r+1}`, the randomness of the block after the
+  commit's round. Every v1 block carries the §4.3 degraded seed, and a v1
+  proposer chooses its block's `cutoff_time`, so a trustee that both serves
+  and proposes could grind the block it would be audited by. Which value is
+  `B_{r+1}` in v1, and the dispatch of audits to verifiers, are pinned
+  together with a drand fetcher. Until then an INFER answer (§11.14) carries
+  `round` but no audit runs against it on the wire.
+- **A signed answer that does not match its request** *(v0.13)* is an
+  attributable false statement (§11.14), but it fits neither fault class of
+  §11.5. Whether it earns one is open.
 - **CBOR canonicalisation libraries vary in conformance.** Several CBOR
   libraries do not implement RFC 8949 §4.2.1 deterministic encoding
   correctly. The reference client will validate that its CBOR encoder
@@ -783,6 +799,8 @@ Stream discipline, by subsystem:
 - **Attestation (§11.12):** same discipline as the DHT — one request/response
   per bidirectional stream, sharing the DHT's envelope. A receiver demuxes a
   bidi stream by the envelope's `type` (§11.11).
+- **Inference (§11.14):** same discipline as the DHT — one request/response
+  per bidirectional stream, sharing the DHT's envelope.
 - **Gossip (§11.3):** one persistent *unidirectional* stream per connection,
   opened by the sender and reused for every frame pushed to that peer.
   Because the stream is never FIN'd per message, each frame is
@@ -1228,8 +1246,9 @@ All append-only; unknown values fail closed.
   ≥ 5 reserved.
 - **Gossip frame types** (§11.3, §11.13): 0 PUSH · 1 IHAVE · 2 IWANT ·
   3 BLOCK · 4 ATTEST · ≥ 5 reserved.
-- **Bidirectional-RPC envelope types** (§11.2, §11.12): 1–8 DHT as tabled ·
-  9 ATTEST_REQ · 10 ATTEST_RESP · ≥ 11 reserved. One registry for every
+- **Bidirectional-RPC envelope types** (§11.2, §11.12, §11.14): 1–8 DHT as tabled ·
+  9 ATTEST_REQ · 10 ATTEST_RESP · 11 INFER_REQ · 12 INFER_RESP ·
+  ≥ 13 reserved. One registry for every
   envelope carried on a bidi stream, so a receiver can demux by `type`
   before decoding the body.
 - **TEE vendors** (§11.12): 0 reserved (never valid on the wire) ·
@@ -1420,6 +1439,103 @@ prefix; an ATTEST frame is ≈ 150 bytes.
 counted against the sender: a v1 node holds no beacon with which to
 recompute its committee (RFC-0004 §"Block production runtime", item 2). The
 restriction lifts with a drand fetcher.
+
+### 11.14 · Inference exchange
+
+*Added in v0.13.* §11.8 pins what a producer signs and what an auditor opens;
+this section pins how a requester asks for an answer and how the producer
+delivers the commit and the answer envelope.
+
+**Exchange.** One request/response per bidirectional stream, in the §11.2
+envelope and with its FIN discipline (§11.1):
+
+| type | message | body |
+|---|---|---|
+| 11 | INFER_REQ  | `request` |
+| 12 | INFER_RESP | `{}` (declined) **or** an `answer` |
+
+```
+request = {
+  0: input      (bytes)      ; 1 .. INFER_MAX_INPUT_BYTES
+  1: tier       (uint)       ; §11.11 verification tier, 1..3
+  2: req_nonce  (bytes 32)   ; requester-fresh; the producer echoes it in the commit
+}
+answer = {
+  0: commit     (bytes)      ; the §11.8 commit encoding
+  1: sig        (bytes 64)   ; Ed25519 over those bytes
+  2: envelope   (bytes)      ; the §11.8 answer envelope
+}
+```
+
+Both maps are closed, the same rule as §11.12: a decoder rejects unknown keys,
+and extending either takes a new envelope type.
+
+**Producer.** A producer MAY decline any request with the empty body. Load,
+an unsupported tier, or an input its model cannot take are all valid reasons,
+and declining is never a fault. When it answers:
+
+- it signs the commit with its peer identity key (§3.4);
+- it sets `round` to the height of its Layer-2 head at serve time;
+- the envelope's `input` is the request's `input` byte for byte.
+
+**The signing key is the connection's peer-id.** It is the key the TLS 1.3
+handshake on this connection authenticated (§11.1), never a key carried in a
+message, the same rule as §11.12. A relayed answer therefore fails the check.
+
+**Requester verification.** An answer is **answered** iff all of:
+
+1. `commit` decodes canonically and `sig` verifies over it under the
+   connection's peer-id;
+2. the commit matches the request: `input_hash = BLAKE3(input)`, the same
+   `req_nonce`, the same `tier`;
+3. `envelope` decodes canonically, its `input` equals the request's `input`,
+   and its token count and distribution count both equal `commit.length`,
+   with `1 ≤ length ≤ INFER_MAX_POSITIONS`, `1 ≤ m ≤ length`, and a byte
+   vocabulary (every distribution `vocab × 4` bytes with `vocab ≤ 256`,
+   §11.8);
+4. the commit carries the audit policy its tier promises: Tiers 2–3
+   `audit_threshold = 2⁶⁴ − 1` (always auditable); Tier 1 at least the
+   requester's sampling floor (the reference requester's is `2⁵⁹`, its own
+   Tier-1 rate);
+5. the integrity gate of §11.8 holds: the §11.4 root recomputed over every
+   distribution in the envelope equals `commit.root`.
+
+A requester SHOULD also reject an answer its rerun of `model_hash` could
+not score — one it could only refuse, never judge — because a producer that
+signs such an answer has dodged its audit. For the v1 reference model that
+is a prefix beyond its 64-token context: the input (truncated to its first
+63 bytes, as the reference model reads it) plus `length` above 64.
+
+The verdicts are three:
+
+- **answered** — all five checks pass;
+- **declined** — the body is empty;
+- **rejected** — any check fails, or the INFER_RESP is malformed (it does not
+  decode, breaks a limit, or echoes the wrong `txid`).
+
+An answered response is the input to an audit; it is not the audit. The
+checks above need no beacon and run at once. The audit itself (§11.8,
+RFC-0003) runs later against `B_{r+1}`, and only a requester that can rerun
+`model_hash` can perform it. What a requester does with each verdict is
+policy. A rejected answer whose signature verifies is a signed false
+statement, but v1 assigns it no fault class (§10).
+
+**Limits.** All pinned (§7):
+
+- `INFER_MAX_INPUT_BYTES` caps the request input; a larger one is malformed.
+- `INFER_MAX_POSITIONS` caps `commit.length`.
+- `INFER_MAX_RESP_BYTES` caps the INFER_RESP envelope. A larger one is
+  rejected without decoding.
+
+The largest conformant INFER_RESP has a full-size input, `INFER_MAX_POSITIONS`
+distributions of 256 × 4 bytes, and the commit: about 71 KB, below the
+response cap. The reference producer generates 16 positions, about 17 KB at
+vocab 256 and 64 bytes of input.
+
+**Not yet on the wire.** The §11.9 receipt that a served answer earns, and
+its countersignature round-trip, arrive in a later version. So do the
+choice of `B_{r+1}` for a round in the v1 degraded chain and the dispatch
+of audits (§10).
 
 ---
 

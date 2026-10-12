@@ -6,6 +6,32 @@ amendments are. Each entry states what was, what is now, and why.
 
 ---
 
+## RFC-0008 v0.13 — the inference exchange · 2026-10-12
+
+**Was:** §11.8 pinned the commit a producer signs and the answer envelope an auditor opens, but not how a request reaches a producer or how the commit and envelope come back. The reference client could serve and audit in-process only. The bidi-RPC registry stopped at 10 (ATTEST_RESP).
+
+**Is now:**
+
+*New §11.14.*
+- INFER_REQ (11) carries `{0: input, 1: tier, 2: req_nonce}`; INFER_RESP (12) carries `{}` (declined) or `{0: commit, 1: sig, 2: envelope}`. Both ride the §11.2 envelope, one exchange per bidi stream. Both maps are closed.
+- A producer may decline anything, and declining is never a fault. When it answers, it signs with its peer identity key, sets `round` to its Layer-2 head height, and echoes the input byte for byte.
+- The signing key is the connection's TLS-authenticated peer-id, never a key on the wire, so a relayed answer fails.
+- The requester gets one of three verdicts: answered, declined or rejected. Answered means the signature, the match with the request, the envelope shape (`1 ≤ m ≤ length`, vocab ≤ 256), the tier's audit policy (Tiers 2–3 always auditable, Tier 1 at least the requester's floor) and the §11.8 integrity gate all hold. A requester SHOULD also reject an answer its rerun of the model could not score. These checks need no beacon; the audit comes later.
+
+*§11.1, §11.11.* Stream discipline for inference. Registry types 11 and 12.
+
+*§7.* Adds `INFER_MAX_INPUT_BYTES` = 4096, `INFER_MAX_POSITIONS` = 64 and `INFER_MAX_RESP_BYTES` = 131072, all P.
+
+*§10.*
+- The reference client builds the model blob from a pinned generator, so every reference node shares one `model_hash`.
+- The v1 beacon `B_{r+1}` and audit dispatch are open. Every v1 block is degraded-seed and a proposer picks its cutoff, so a serving trustee could grind its own audit; this is pinned with the drand fetcher.
+- A signed answer that does not match its request has no fault class yet.
+
+**Why:**
+- **Founder decisions, 2026-10-12.** Serving before receipts and bonds (PR8a, then PR8b). The full envelope travels in the response, so a requester can audit on its own and the producer keeps no state. The model comes from a pinned generator, not a file.
+- Receipts (§11.9) and their countersignature round-trip are deliberately left for the next version.
+- **Adversarial review of the reference implementation** found the audit-dodging answers that the m, vocab, tier-policy and context rules close. Each one was signed and root-consistent, so it was answered, yet the audit could only refuse it, never reach a fraud verdict: `m = 0`, vocab 1024, a Tier-2 commit with `audit_threshold = 0`, and a prefix past the model's context.
+
 ## RFC-0004 v0.10 + RFC-0008 v0.12 — the Layer-1 view window and pruning · 2026-10-12
 
 **Was:** v0.9 item 9 made a proof visible at a cutoff once its epoch had begun, with no lower bound. §G-Set pruning said proofs become prunable after confirmation, but nothing tied pruning to the chain's view. A node that pruned and a node that did not (an archive) would therefore compose different blocks from the same chain state. Pruning also raised three questions the text left open: is a proof re-offered after it was pruned news again, does pruning un-slash, and which epoch drives it.
