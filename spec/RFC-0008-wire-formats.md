@@ -1,6 +1,6 @@
 # RFC-0008 — Wire Formats, Crypto Primitives, and Reference Constants
 
-**Status:** Reference · v0.9 (living standard)
+**Status:** Reference · v0.10 (living standard)
 **Topic:** The concrete byte-level choices the protocol makes once and refers to from everywhere else.
 **Audience:** You, if you are about to write code.
 **Depends on:** all design RFCs (this document is the implementation glue between them).
@@ -596,6 +596,10 @@ changes within a major version are permitted.
 | `GOSSIP_FANOUT_f` | RFC-0004 §The propagation bound; §11.3 | 6 | C |
 | `GOSSIP_MAX_FRAME_BYTES` | §11.3 | 4096 (receiver default; local policy) | C |
 | `GOSSIP_MAX_IDS_PER_DIGEST` | §11.3 | 64 (an IHAVE/IWANT naming more is malformed) | P |
+| `CHAIN_GOSSIP_DEDUP_S` | §11.13 | 10 s (the re-broadcast interval) | C |
+| `CHAIN_MAX_BLOCK_FRAME_BYTES` | §11.13 | 32768 (a larger BLOCK frame is malformed) | P |
+| `CHAIN_CUTOFF_SKEW_S` | RFC-0004 §Block production runtime | 10 s (how far ahead of a member's clock a proposal's cutoff may lie) | C |
+| `PHASE1_COMMITTEE_K` | RFC-0010 §Phase 1; RFC-0004 §Block production runtime | 5 (k = min(N, 5)) | C |
 | `RECEIPT_NONCE_BYTES` | RFC-0004 §The receipt; §11.9 | 16 | P |
 | `SUMMARY_MAX_BUCKETS` | RFC-0004 §Compact summaries; §11.9 | 256 (a summary naming more is malformed) | P |
 | `SUMMARY_BUCKET_WIDTH` | RFC-0004 §Compact summaries; §11.9 | 86400 s (1 day; DRAFT default — granularity is calibratable) | C |
@@ -646,6 +650,7 @@ Vector categories (each with multiple instances):
 - Receipt bodies, receipt-bag inclusion proofs, and compact summaries
   (§11.9)
 - Attestation presentations and the `report_data` binding (§11.12)
+- Chain gossip frames (§11.13) and block-production runtime traces
 
 These vectors are the *implementation-level* spec. Any client that produces
 different output for the same vector input is non-conformant.
@@ -838,7 +843,8 @@ format is exactly the kind of change §9 prices as breaking.
 ### 11.3 · Gossip frames
 
 The gossip overlay (RFC-0004 §Layer 1) pushes fault proofs eagerly and fills
-gaps by lazy pull. Three frame types, each a `map(2)` with integer keys:
+gaps by lazy pull. Three frame types, each a `map(2)` with integer keys (the
+Layer-2 chain adds two more, §11.13):
 
 ```
 PUSH  = { 0: 0, 1: proof (bytes) }             ; one fault-proof envelope (§11.5)
@@ -847,7 +853,8 @@ IWANT = { 0: 2, 1: ids (array of bytes(32)) }  ; "send me these"
 ```
 
 An IHAVE/IWANT names 1..64 content-ids; more is malformed. Frames above the
-receiver's frame cap (default 4096 bytes) are rejected without decoding. The
+receiver's frame cap (default 4096 bytes; per type for the §11.13 frames,
+read from the frame head) are rejected without decoding. The
 receive path is the RFC-0004 reference sketch verbatim: VERIFY-insert into
 the G-Set; new → forward to up-to-`f` view peers excluding the sender;
 duplicate → drop (the epidemic terminates); VERIFY-fail → drop and count
@@ -1218,7 +1225,8 @@ All append-only; unknown values fail closed.
   identity.)
 - **Finding severities** (§11.6): 1 SOFT · 2 MEDIUM · 3 HARD · 4 TERMINAL ·
   ≥ 5 reserved.
-- **Gossip frame types** (§11.3): 0 PUSH · 1 IHAVE · 2 IWANT.
+- **Gossip frame types** (§11.3, §11.13): 0 PUSH · 1 IHAVE · 2 IWANT ·
+  3 BLOCK · 4 ATTEST · ≥ 5 reserved.
 - **Bidirectional-RPC envelope types** (§11.2, §11.12): 1–8 DHT as tabled ·
   9 ATTEST_REQ · 10 ATTEST_RESP · ≥ 11 reserved. One registry for every
   envelope carried on a bidi stream, so a receiver can demux by `type`
@@ -1346,6 +1354,46 @@ response cap, so no conformant peer can trip either. For scale, measured on the 
 real-vendor test vectors: a production TDX quote with its embedded PCK
 chain is 4 935 bytes; an SNP report followed by a certificate
 table carrying VCEK + ASK + ARK (plus terminator) is 5 956 bytes.
+
+### 11.13 · Chain gossip frames
+
+*Added in v0.10.* Layer-2 proposals and committee attestations (RFC-0004
+§"Block production runtime") travel on the gossip overlay of §11.3 — the
+same per-connection unidirectional stream, the same 2-byte big-endian length
+prefix — so finality reaches, and is verifiable by, every node rather than
+only committee members:
+
+```
+BLOCK  = { 0: 3, 1: block (bytes) }          ; the §11.6 block encoding
+ATTEST = { 0: 4, 1: height (uint),
+                 2: block_hash (bytes 32),
+                 3: signer (bytes 32),        ; a population peer-id
+                 4: sig (bytes 64) }          ; Ed25519 over block_hash
+```
+
+**Receive path.** A frame that does not decode canonically, a BLOCK whose
+block does not decode (§11.6), or an ATTEST whose signer is not in the
+population or whose signature does not verify, is dropped and counted against
+the sender. A valid frame that is new to the receiver is handed to the chain
+runtime and forwarded to up to `f` view peers excluding the sender, exactly as
+PUSH is.
+
+**Deduplication** is by `BLAKE3(frame bytes)` and lasts only
+`CHAIN_GOSSIP_DEDUP_S`: holders re-broadcast an open attempt's proposal and
+their own attestation at that interval (RFC-0004), and the window lets those
+repeats re-flood, so a node that connects mid-attempt still receives them.
+Frames are not re-validated against chain state for deduplication — a frame
+at or below the receiver's head is simply ignored by its runtime.
+
+**Size.** `GOSSIP_MAX_FRAME_BYTES` applies to frame types 0–2. A BLOCK frame
+may be up to `CHAIN_MAX_BLOCK_FRAME_BYTES`, which covers a block at the
+`MAX_PATTERN_FINDINGS` ceiling (≈ 24.7 KB encoded) within the u16 length
+prefix; an ATTEST frame is ≈ 150 bytes.
+
+**v1 restriction.** A BLOCK whose `degraded_seed` is false is ignored — not
+counted against the sender: a v1 node holds no beacon with which to
+recompute its committee (RFC-0004 §"Block production runtime", item 2). The
+restriction lifts with a drand fetcher.
 
 ---
 

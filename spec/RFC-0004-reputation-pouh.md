@@ -1,6 +1,6 @@
 # RFC-0004 — Reputation: Two Layers, One Architecture
 
-**Status:** Draft · v0.7
+**Status:** Draft · v0.8
 **Topic:** A reputation system in two layers — a consensus-free CRDT of self-authenticating fault proofs for individual slashing, and a small slow Proof-of-Unique-Hardware (PoUH) chain as ordered witness for pattern-based rules. The chain confirms what has happened. It does not create what happens. v0.3 added **A-as-bond for high-stakes acts**, v0.4 specified the **bond accounting model** and the fork-recovery bond formula. v0.5 closes four BLOCK items surfaced by the multi-persona external review: **G-Set pruning** with late-joiner protocol (N1), **partition recovery** with equivocation slashing and Σ-T fork choice (N2), **selective disclosure of receipts** as a first-class mechanism (N6, fixing previously-broken "RFC-0003-b" cross-references), and a **race-safe bond admission protocol** that does not require synchronised clocks. v0.7 makes committee fabrication **attributable**: the `invalid-transition` fault class as a signer-attributable, self-contained Layer-1 proof (§"Fabrication is attributable").
 **Audience:** You, if you have read enough blockchain whitepapers to be skeptical of one more — and willing to read another.
 **Depends on:** [RFC-0003](./RFC-0003-verification.md), [RFC-0005](./RFC-0005-identity.md)
@@ -341,6 +341,56 @@ slow makes adversarial conditions less profitable. A block that fails to reach
 same mempool.
 
 Finality is final: once 2/3 of a committee signs, the block stays.
+
+### Block production runtime (v1)
+
+*Added in v0.8.* The five steps above say what happens to one block; this is
+how a node strings blocks together. It is the v1 / RFC-0010 Phase 1
+("trustee-signed") form; the wire is RFC-0008 §11.13. *Head* is the node's
+latest final block — genesis (height 0, the genesis hash, cutoff = genesis
+time) at start.
+
+1. **Population.** In Phase 1 it is the **genesis trustees**, ordered by
+   peer-id. Under RFC-0005 v1 verify-and-tag no peer is attested yet, so the
+   attested population of later phases is empty: trustees are the
+   population by design, not as a relaxation.
+2. **Heights are sequential.** With head H the node attempts height
+   h = H + 1 on prev = hash(H). The committee is the VRF selection of
+   `k = min(N, PHASE1_COMMITTEE_K)` members, seeded per RFC-0008 §4.2 — or the
+   §4.3 degraded seed while no drand round is available; v1 nodes carry no
+   drand fetcher, so every v1 block is `degraded_seed: true`. The proposer is
+   committee position `h mod k` (RFC-0008 §11.6).
+3. **Proposal.** The proposer waits out the §4.3 drand hard floor (30 s) from
+   the attempt's start and at least one block time past the head's cutoff,
+   then composes the block with `cutoff_time` = its own clock, signs the block
+   hash and broadcasts both.
+4. **Signing.** A committee member signs a proposal for its current attempt
+   only if `prev` is its head, `cutoff_time` lies in
+   [head cutoff + block time, its own clock + `CHAIN_CUTOFF_SKEW_S`], and its
+   **own** Layer-1 view at that cutoff — the proofs signed at or before it,
+   per the reference sketch below — composes the byte-identical block
+   (recompute-and-compare). **A member signs at most one block per height,
+   ever:** two would be the attributable equivocation of §Equivocation
+   slashing, and this rule is what lets an honest member never commit it.
+5. **Finality** at ⌈2k/3⌉ valid attestations; receivers verify each
+   attestation's signature on arrival, before counting it, so a forged
+   attestation cannot poison the verdict.
+6. **Skip.** An attempt not final within the finality timeout (120 s) is
+   skipped: the node moves to height h + 1 **on the same prev** — a new
+   committee and proposer. Heights can therefore have gaps. This is the
+   operational form of "skipped; the next committee proceeds" above, and
+   because a retry is a new height, no member ever needs to sign a second
+   block at one.
+7. **Adoption.** A node adopts any block it can prove final with a height
+   above its head, even when its prev is not the node's head — the committee
+   is recomputable from the block's own (prev, height) and the static
+   population. A node that fell behind or joined late catches up on finality,
+   not on history; full chain sync (RFC-0010 step 8) supersedes this when it
+   lands.
+8. **Epoch.** A block's epoch is (cutoff − genesis time) / `EPOCH_DURATION`.
+
+Holders re-broadcast an open attempt's proposal and their own attestation
+every `CHAIN_GOSSIP_DEDUP_S` until the attempt ends (RFC-0008 §11.13).
 
 ### What gets recorded — the epoch summary
 
