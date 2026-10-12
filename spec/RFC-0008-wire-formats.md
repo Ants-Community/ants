@@ -614,6 +614,7 @@ changes within a major version are permitted.
 | `RECEIPT_WINDOW` | §11.15 | 600 s (how long a served answer stays receiptable) | C |
 | `RECEIPT_CLOCK_SKEW` | §11.15 | 300 s | C |
 | `RECEIPT_MAX_OFFER_BYTES` | §11.15 | 512 (a larger RECEIPT_OFFER is malformed) | P |
+| `RECEIPT_MAX_ACK_BYTES` | §11.15 | 128 (a larger RECEIPT_ACK is malformed) | P |
 
 Pinned values that change require a major version increment. Calibratable
 values change within the version via amendment to the corresponding RFC, with
@@ -1541,10 +1542,9 @@ distributions of 256 × 4 bytes, and the commit: about 71 KB, below the
 response cap. The reference producer generates 16 positions, about 17 KB at
 vocab 256 and 64 bytes of input.
 
-**Not yet on the wire.** The §11.9 receipt that a served answer earns, and
-its countersignature round-trip, arrive in a later version. So do the
-choice of `B_{r+1}` for a round in the v1 degraded chain and the dispatch
-of audits (§10).
+**Not yet on the wire.** The choice of `B_{r+1}` for a round in the v1
+degraded chain, and the dispatch of audits (§10). *(v0.14: the receipt a
+served answer earns is §11.15.)*
 
 ### 11.15 · Receipt exchange
 
@@ -1596,9 +1596,14 @@ iff all of:
    body, `server` is its own peer-id and `client` is the connection's
    peer-id;
 2. `client_sig` verifies over `body` under `client`;
-3. `nonce` is the nonce of a commit it served **to this client** within
-   `RECEIPT_WINDOW`, and that commit has not been countersigned before.
-   **A server countersigns at most one receipt per nonce;**
+3. `nonce` is the nonce of a commit it served **to this client**, with
+   `now − served_at ≤ RECEIPT_WINDOW`, and the server has **never** filed a
+   receipt with that nonce. **A server countersigns at most one receipt per
+   nonce, over its whole history.** A commit is deterministic, so a
+   replayed INFER_REQ is answered with the same commit, and so carries the
+   same nonce, long after the window. The server's receipt bag is the
+   record of what was paid. A commit served to several requesters (one
+   copying another's request) belongs to the first it was served to;
 4. `ncs_value ≥ INFER_REF_UNCS_PER_POSITION × length` of that commit;
 5. `|timestamp − now| ≤ RECEIPT_CLOCK_SKEW`.
 
@@ -1607,9 +1612,9 @@ After the ACK, both parties hold the complete receipt (body, `server_sig`,
 `client_sig`). The server files it in its receipt bag (§11.9). A client
 whose ACK carries a `server_sig` that does not verify discards it.
 
-**Limits.** A RECEIPT_OFFER envelope above `RECEIPT_MAX_OFFER_BYTES` is
-malformed and rejected undecoded. The largest conformant one is about 230
-bytes.
+**Limits.** A RECEIPT_OFFER envelope above `RECEIPT_MAX_OFFER_BYTES`, or a
+RECEIPT_ACK above `RECEIPT_MAX_ACK_BYTES`, is malformed and rejected
+undecoded. The largest conformant ones are about 230 and 75 bytes.
 
 **What this does not settle.** A Sybil pair can still countersign receipts
 for work nobody needed, which is RFC-0004's "strategically inert" farmed
