@@ -1,6 +1,6 @@
 # RFC-0005 — Identity
 
-**Status:** Draft · v0.2 (early — substantial revision expected)
+**Status:** Draft · v0.3 (early — substantial revision expected)
 **Topic:** How a peer proves it is a unique physical machine, without naming who owns it.
 **Audience:** You, if you have ever wondered why every previous decentralised AI project either had a token or had a Sybil problem.
 **Depends on:** trusted hardware that exists today.
@@ -60,6 +60,19 @@ When a peer joins the network:
 
 The attestation report is **not stored on the reputation chain**. It is stored by the peer itself, presented on demand to other peers during handshake. Verification is recomputed locally per interaction. (This avoids inflating the chain with attestation records that don't need global consensus.)
 
+The bytes of that presentation — the ATTEST_REQ / ATTEST_RESP exchange, the per-vendor evidence layouts, and the `report_data` binding that ties the evidence to the connection's peer-id and to its `issued_at` — are pinned in RFC-0008 §11.12.
+
+### v1 admission posture: verify-and-tag
+
+*Added in v0.3.* Attestation *verification* is implemented for Intel TDX and AMD SEV-SNP; attestation *generation* needs real confidential-compute hardware and lands separately. Until it does, no peer can present evidence, and a handshake gate that rejected unattested peers would admit no one. The v1 gate therefore runs in **verify-and-tag** mode:
+
+- a peer that answers ATTEST_RESP with an empty body is admitted as **unattested**;
+- a peer whose presentation verifies (RFC-0008 §11.12) is tagged **attested** for that connection;
+- a peer whose presentation is **rejected** — evidence that fails the chain, signature or binding check, or a malformed answer (RFC-0008 §11.12) — is disconnected: presenting false evidence is worse than presenting none;
+- a peer presenting a vendor the verifier does not support yet, or genuine evidence that is no longer fresh, is **not attested** but stays connected — it presented nothing false, and must refresh before it counts.
+
+Every context that requires attestation — committee selection from the attested population, trustee key rotation (RFC-0010), high-stakes bond admission (RFC-0004 §Bonds) — treats an unattested peer as not attested; nothing relaxes. A network with no attested peers is therefore a **trusted-seed testnet**, not the trustless mainnet. Moving to **hard-gate** mode (reject unattested peers at the handshake) is a protocol-version event announced through the governance process, not a local configuration flag: a network where some peers hard-gate and others do not partitions along the flag.
+
 Attestation reports have **expiration windows** (typically a few weeks to a few months, depending on vendor). When a report expires, the peer must obtain a fresh one. This handles two problems: (a) a stolen TEE that has been remotely repaired or replaced gets a new attestation; (b) a compromised vendor key can be retired by waiting for old attestations to expire.
 
 ### Attestation freshness window
@@ -82,7 +95,10 @@ compromised TEE keys remain usable for longer).
 The freshness check is a **wall-clock comparison against the
 attestation's signed `issued_at` timestamp**, with a tolerance of ±5
 minutes for clock skew between the verifier and the vendor's
-attestation service. A peer presenting an attestation issued more than
+attestation service. (`issued_at` is signed by being committed in the
+evidence's `report_data`, RFC-0008 §11.12; an `issued_at` more than
+`ATTESTATION_CLOCK_SKEW` = 5 minutes in the verifier's future is
+rejected.) A peer presenting an attestation issued more than
 `ATTESTATION_FRESHNESS_WINDOW` ago is treated as not-attested and must
 refresh before further interaction.
 

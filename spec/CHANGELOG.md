@@ -6,6 +6,24 @@ amendments are. Each entry states what was, what is now, and why.
 
 ---
 
+## RFC-0008 v0.9 + RFC-0005 v0.3 — Attestation presentation (§11.12), signed `issued_at`, v1 verify-and-tag admission · 2026-10-12
+
+**Was:** RFC-0005 said a peer presents its attestation "on demand to other peers during handshake", but no document pinned the bytes. An implementer had no exchange, no envelope, no per-vendor blob layout and no rule tying the evidence to the connection. RFC-0005 §Attestation freshness window measured freshness from "the attestation's **signed** `issued_at` timestamp", yet no signed field carried it. The vendor-signed SNP report and TDX quote have no issuance timestamp, so `issued_at` existed only as unsigned presenter metadata. A stale attestation could be re-dated freely, and the 30-day window bounded nothing. Finally, the corpus did not say what a v1 peer should do at the handshake while attestation *generation* still waits on real confidential-compute hardware, and no peer can present evidence yet.
+
+**Is now:** RFC-0008 §11.12 pins the presentation:
+- **Exchange.** ATTEST_REQ / ATTEST_RESP (types 9/10) ride the §11.2 bidirectional-RPC envelope. The DHT message-type registry is generalized into one *bidi-RPC envelope* registry, so a receiver can demux by `type`. An ATTEST_RESP is either empty ("not attested") or `{0: vendor, 1: issued_at, 2: expires_at, 3: blob}`.
+- **Blob layouts.** TDX uses the unmodified DCAP v4 quote with the PCK chain, verified to the pinned Intel SGX Root CA. SNP uses the report followed by the GHCB certificate table, verified to the per-family pinned ARK. Any ARK carried in the table is ignored.
+- **Binding.** The 64-byte guest-chosen `report_data` is pinned as `peer-id ‖ LE64(issued_at) ‖ 0×24`, which is what makes `issued_at` the signed timestamp RFC-0005 already claimed. The key is never carried on the wire: the binding is checked against the peer-id authenticated by the TLS handshake on that connection.
+- **Verification.** Five-step rule. Failure is a verdict, not an error, and there are three verdicts. *Attested* means all steps pass. *Not attested* covers an empty body, an unsupported vendor or stale evidence. *Rejected* covers a failed chain, signature or binding, or a malformed answer. RFC-0005 disconnects only on *rejected*. The presentation map is closed: an extension takes a new envelope type, not a new key, so old nodes never judge valid messages malformed.
+- **Constants (§7).** `ATTESTATION_CLOCK_SKEW` (300 s, C), `ATTESTATION_MAX_BLOB_BYTES` (16384, P), `ATTESTATION_MAX_RESP_BYTES` (20480, P — both caps are pinned, since exceeding them is *rejected*).
+- **§11.2 clarification.** An empty body is encoded by omitting key 2 (the envelope is `map(2)`), an explicit `{}` is non-canonical, and `txid` fits in 32 bits. These are the deployed DHT bytes since v0.6, and the tables had left them implicit. The attestation exchange follows the same rule.
+
+RFC-0005 v0.3 cross-references §11.12 and adds the **v1 verify-and-tag posture**. An empty answer means the peer is admitted unattested. Verified evidence tags the connection attested. *Rejected* evidence means disconnect, while an unsupported vendor or stale evidence leaves the peer connected but unattested. Every attestation-requiring context (committee selection, trustee rotation, high-stakes bonds) still treats unattested as not attested. A network without attested peers is a trusted-seed testnet, and moving to hard-gate is a protocol-version event, not a config flag.
+
+**Why:** The reference client has completed pure-software TDX and SNP verification and is wiring the handshake gate into its node daemon. That gate is interop-bearing, so its bytes belong in the spec before the code, decided in daylight.
+
+The `issued_at` binding is the substantive call. Without it, RFC-0005's freshness window and the revocation-propagation bound built on it are unenforceable. The fix costs nothing at generation time, because the attested guest code chooses `report_data`. The design also leaves out a per-connection verifier nonce, which would force a fresh quote per connection, and keeps the replay model RFC-0005 already chose: window plus binding. Verify-and-tag is the founder's v1 decision. It lets the trusted-seed testnet run on the real gate code path without pretending to be Sybil-resistant.
+
 ## IMPLEMENTATION.md — TEE attestation (#3) un-deferred from v2.x into v1 · 2026-06-15
 
 **Was:** The component #3 row, the critical-path section, the Phase-A

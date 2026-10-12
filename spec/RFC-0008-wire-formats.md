@@ -1,6 +1,6 @@
 # RFC-0008 — Wire Formats, Crypto Primitives, and Reference Constants
 
-**Status:** Reference · v0.8 (living standard)
+**Status:** Reference · v0.9 (living standard)
 **Topic:** The concrete byte-level choices the protocol makes once and refers to from everywhere else.
 **Audience:** You, if you are about to write code.
 **Depends on:** all design RFCs (this document is the implementation glue between them).
@@ -599,6 +599,9 @@ changes within a major version are permitted.
 | `RECEIPT_NONCE_BYTES` | RFC-0004 §The receipt; §11.9 | 16 | P |
 | `SUMMARY_MAX_BUCKETS` | RFC-0004 §Compact summaries; §11.9 | 256 (a summary naming more is malformed) | P |
 | `SUMMARY_BUCKET_WIDTH` | RFC-0004 §Compact summaries; §11.9 | 86400 s (1 day; DRAFT default — granularity is calibratable) | C |
+| `ATTESTATION_CLOCK_SKEW` | RFC-0005 §Attestation freshness window; §11.12 | 300 s (an `issued_at` further in the future is rejected) | C |
+| `ATTESTATION_MAX_BLOB_BYTES` | §11.12 | 16384 (a larger blob is malformed) | P |
+| `ATTESTATION_MAX_RESP_BYTES` | §11.12 | 20480 (a larger ATTEST_RESP is malformed) | P |
 
 Pinned values that change require a major version increment. Calibratable
 values change within the version via amendment to the corresponding RFC, with
@@ -642,6 +645,7 @@ Vector categories (each with multiple instances):
   root and inclusion paths (§11.6)
 - Receipt bodies, receipt-bag inclusion proofs, and compact summaries
   (§11.9)
+- Attestation presentations and the `report_data` binding (§11.12)
 
 These vectors are the *implementation-level* spec. Any client that produces
 different output for the same vector input is non-conformant.
@@ -770,6 +774,9 @@ Stream discipline, by subsystem:
 - **DHT (§11.2):** one RPC per *bidirectional* stream. The requester writes
   one envelope and FINs; the responder writes one envelope and FINs. The FIN
   is the message boundary — no length prefix.
+- **Attestation (§11.12):** same discipline as the DHT — one request/response
+  per bidirectional stream, sharing the DHT's envelope. A receiver demuxes a
+  bidi stream by the envelope's `type` (§11.11).
 - **Gossip (§11.3):** one persistent *unidirectional* stream per connection,
   opened by the sender and reused for every frame pushed to that peer.
   Because the stream is never FIN'd per message, each frame is
@@ -793,6 +800,11 @@ envelope = {
   2: body   (map)    ; per-type fields, possibly empty
 }
 ```
+
+An empty body (`{}` in the tables below) is encoded by **omitting key 2**:
+the envelope is then `map(2)`, and an explicit empty body map is
+non-canonical and rejected. `txid` is at most 2³² − 1. (Both rules are the
+deployed bytes since v0.6; v0.9 states them.)
 
 | type | message | body |
 |---|---|---|
@@ -1207,7 +1219,13 @@ All append-only; unknown values fail closed.
 - **Finding severities** (§11.6): 1 SOFT · 2 MEDIUM · 3 HARD · 4 TERMINAL ·
   ≥ 5 reserved.
 - **Gossip frame types** (§11.3): 0 PUSH · 1 IHAVE · 2 IWANT.
-- **DHT message types** (§11.2): 1–8 as tabled.
+- **Bidirectional-RPC envelope types** (§11.2, §11.12): 1–8 DHT as tabled ·
+  9 ATTEST_REQ · 10 ATTEST_RESP · ≥ 11 reserved. One registry for every
+  envelope carried on a bidi stream, so a receiver can demux by `type`
+  before decoding the body.
+- **TEE vendors** (§11.12): 0 reserved (never valid on the wire) ·
+  1 INTEL_TDX · 2 AMD_SEV_SNP · 3 ARM_CCA · 4 APPLE_SE · 5 QUALCOMM_QSEE ·
+  ≥ 6 reserved.
 - **Verification tiers** (§11.8): 1 attestation+sampling · 2 cross-check ·
   3 triangulation.
 
@@ -1215,6 +1233,119 @@ Deliberately *not* specified here: the **local ledger record**
 (economy/ledger) — it is private per RFC-0001, never crosses the wire, and
 acquires a spec section only if record interchange ever becomes a protocol
 feature; and the **reference-model weight blob** (§10, RFC-0009's appendix).
+
+### 11.12 · Attestation presentation
+
+*Added in v0.9.* RFC-0005 has a peer keep its own attestation and present it
+"on demand to other peers during handshake"; this section pins the bytes of
+that presentation, the binding between the evidence and the connection, and
+the verification a receiver runs. RFC-0005 §The attestation flow states the
+v1 admission posture built on it.
+
+**Exchange.** One request/response per bidirectional stream, in the §11.2
+envelope and with its FIN discipline:
+
+| type | message | body |
+|---|---|---|
+| 9  | ATTEST_REQ  | `{}` |
+| 10 | ATTEST_RESP | `{}` — nothing to present — **or** a `presentation` |
+
+(`{}` is the §11.2 empty body: key 2 omitted, envelope `map(2)`.)
+
+```
+presentation = {
+  0: vendor      (uint)    ; TEE vendor registry, §11.11 (0 is never valid)
+  1: issued_at   (uint)    ; Unix seconds — committed in report_data, below
+  2: expires_at  (uint)    ; Unix seconds; 0 = the vendor carries no hard expiry
+  3: blob        (bytes)   ; vendor evidence, layout per vendor below
+}
+```
+
+An empty body is a legitimate answer, not an error: it says "I am not
+attested". `vendor` is at most 2³¹ − 1 (registry values are small) and the
+two times at most 2⁶³ − 1; larger values are malformed. The presentation map
+is closed: a decoder rejects unknown keys, so extending what a peer presents
+takes a **new envelope type** (append-only registry), never a fifth key —
+an old node must never meet a valid message it would judge malformed. Either side MAY send ATTEST_REQ once per connection after the
+handshake; the verdict is cached for the connection's lifetime and
+re-presentation happens on a new connection. There is no verifier nonce in
+v1 — the freshness window (RFC-0005) plus the binding below is the replay
+model, and it keeps quote generation off the per-connection path.
+
+**What is deliberately not on the wire.**
+
+- *The peer public key.* The key the evidence must bind is the peer-id the
+  TLS 1.3 handshake on **this connection** authenticated (§11.1) — never a
+  key claimed in a message. Relaying someone else's presentation therefore
+  fails the binding.
+- *The TCB identifier.* It is derived by the verifier from the signed
+  evidence; a claimed value would be trusted by no one.
+
+**Vendor blob layouts** (v1 covers the x86-server vendors):
+
+- `INTEL_TDX` — a DCAP v4 quote, unmodified, including its certification
+  data (type 5: the PEM-encoded PCK chain). The chain is verified to the
+  pinned **Intel SGX Root CA**.
+- `AMD_SEV_SNP` — the 0x4A0-byte `ATTESTATION_REPORT`, immediately followed
+  by the AMD GHCB certificate table: 24-byte entries
+  `GUID[16] ‖ offset:u32le ‖ length:u32le` (GUID in RFC 4122 big-endian byte
+  order; `offset` from the start of the table), terminated by an all-zero
+  entry, carrying at least the VCEK and ASK entries. The chain is verified to
+  the **ARK pinned per product family** (v1: Milan); an ARK present in the
+  table is ignored — trust comes from the pin, never from the presenter.
+- Every other vendor — reserved. A verifier that meets one returns "not
+  attested" (fail closed); it is not a protocol error.
+
+**`report_data` binding.** Both SNP and TDX carry 64 guest-chosen bytes of
+`report_data` inside the vendor-signed structure. They are pinned as:
+
+```
+report_data[0:32]  = the peer's Ed25519 public key (its peer-id)
+report_data[32:40] = LE64(issued_at)
+report_data[40:64] = 0x00 × 24          ; reserved, MUST be zero
+```
+
+Committing `issued_at` here is what makes it the **signed** timestamp
+RFC-0005 §Attestation freshness window measures from: the guest code that
+writes `report_data` is the attested code, so the timestamp is exactly as
+trustworthy as the measurement. Without it `issued_at` would be presenter
+metadata, freely rewritable, and the freshness window would bound nothing.
+
+**Verification.** A presentation is **attested** iff all of:
+
+1. the vendor is supported and the blob is well-formed for it;
+2. the vendor certificate chain verifies to the pinned root, with
+   certificate validity evaluated at `issued_at`;
+3. the report / quote signature verifies under the chain's leaf key;
+4. `report_data` equals the binding above for the connection's peer-id and
+   the presentation's `issued_at`;
+5. it is fresh at the verifier's `now`:
+   `now − issued_at < ATTESTATION_FRESHNESS_WINDOW`,
+   `issued_at ≤ now + ATTESTATION_CLOCK_SKEW`, and
+   `expires_at = 0 ∨ now < expires_at`.
+
+Any failure is a verdict, never an error (§11 contract), and the verdicts
+are three:
+
+- **attested** — all five steps pass;
+- **not attested** — the body is empty, the vendor is not one the verifier
+  supports (step 1, fail closed), or genuine evidence is not fresh (step 5):
+  nothing false was presented;
+- **rejected** — the evidence fails step 2, 3 or 4, or the ATTEST_RESP is
+  malformed (it does not decode, breaks a limit above, or echoes the wrong
+  `txid`): the peer presented something false or broke the exchange.
+
+What a receiver *does* with each verdict is RFC-0005's call, not this
+section's.
+
+**Limits.** `blob` is at most `ATTESTATION_MAX_BLOB_BYTES`; a larger one is
+malformed. An ATTEST_RESP envelope above `ATTESTATION_MAX_RESP_BYTES` is
+malformed and rejected without decoding. Both are pinned: the largest
+conformant ATTEST_RESP is a few dozen bytes over the blob cap, far below the
+response cap, so no conformant peer can trip either. For scale, measured on the reference client's
+real-vendor test vectors: a production TDX quote with its embedded PCK
+chain is 4 935 bytes; an SNP report followed by a certificate
+table carrying VCEK + ASK + ARK (plus terminator) is 5 956 bytes.
 
 ---
 
