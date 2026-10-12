@@ -6,6 +6,30 @@ amendments are. Each entry states what was, what is now, and why.
 
 ---
 
+## RFC-0008 v0.14 — the receipt exchange · 2026-10-12
+
+**Was:** §11.9 pinned the receipt body, its two signatures and the bag, but not how two parties produce a receipt. After a §11.14 answer there was no message to carry one, so no served work could become `A` or `T`. §11.9 and §7 also cited an RFC-0004 section, "The receipt that matters for tenure", that never existed.
+
+**Is now:**
+
+*New §11.15.*
+- RECEIPT_OFFER (13) `{0: body, 1: client_sig}` is opened by the requester. RECEIPT_ACK (14) answers `{}` (refused) or `{0: server_sig}`. Both ride the §11.2 envelope, one exchange per bidi stream, and both maps are closed.
+- **Binding:** the body's `nonce` is `BLAKE3(commit)[0:16]`, the commit the INFER_RESP carried. The §11.9 body needs no new field. Anyone holding the commit can check which answer a receipt pays for.
+- **The client offers only for an answered response.** `server` is the connection's TLS peer-id, and `ncs_value` is at least the reference rate × `commit.length`.
+- **The server countersigns** iff the offer is canonical and addressed to it by this connection's peer, the client signature verifies, and the nonce names a commit it served to this client within `RECEIPT_WINDOW` that it has not countersigned before (at most one receipt per nonce). The value must also meet the rate and the timestamp lie within `RECEIPT_CLOCK_SKEW`. A refusal is never a fault.
+
+*§11.1, §11.11.* Stream discipline for receipts. Registry types 13 and 14.
+
+*§7.* Adds `INFER_REF_UNCS_PER_POSITION` = 1000 μNCS (C), `RECEIPT_WINDOW` = 600 s (C), `RECEIPT_CLOCK_SKEW` = 300 s (C) and `RECEIPT_MAX_OFFER_BYTES` = 512 (P).
+
+*§10.* Pricing is a single reference rate per position until RFC-0001's benchmarked table exists.
+
+*Cross-references.* §11.9 and §7 now cite RFC-0004 §"Computing A" and §"Tenure: the (A, T, κ) spine".
+
+**Why:**
+- **Founder decisions, 2026-10-12.** The client offers and the server countersigns, so a receipt exists only for work the client accepted. The nonce derives from the commit. Pricing is a per-position reference rate. Receipts land in PR8b; bonds follow in PR8c.
+- Sybil farming stays RFC-0004's "strategically inert" case. The binding makes each receipt name a real signed commit, not useful work.
+
 ## RFC-0008 v0.13 — the inference exchange · 2026-10-12
 
 **Was:** §11.8 pinned the commit a producer signs and the answer envelope an auditor opens, but not how a request reaches a producer or how the commit and envelope come back. The reference client could serve and audit in-process only. The bidi-RPC registry stopped at 10 (ATTEST_RESP).

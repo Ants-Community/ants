@@ -1,6 +1,6 @@
 # RFC-0008 — Wire Formats, Crypto Primitives, and Reference Constants
 
-**Status:** Reference · v0.13 (living standard)
+**Status:** Reference · v0.14 (living standard)
 **Topic:** The concrete byte-level choices the protocol makes once and refers to from everywhere else.
 **Audience:** You, if you are about to write code.
 **Depends on:** all design RFCs (this document is the implementation glue between them).
@@ -601,7 +601,7 @@ changes within a major version are permitted.
 | `CHAIN_CUTOFF_SKEW_S` | RFC-0004 §Block production runtime | 10 s (how far ahead of a member's clock a proposal's cutoff may lie) | C |
 | `L1_VIEW_WINDOW_EPOCHS` | RFC-0004 §Block production runtime items 9-10 | 30 (the pattern window; proofs below head epoch − 30 are prunable) | P |
 | `PHASE1_COMMITTEE_K` | RFC-0010 §Phase 1; RFC-0004 §Block production runtime | 5 (k = min(N, 5)) | C |
-| `RECEIPT_NONCE_BYTES` | RFC-0004 §The receipt; §11.9 | 16 | P |
+| `RECEIPT_NONCE_BYTES` | RFC-0004 §Computing A; §11.9, §11.15 | 16 | P |
 | `SUMMARY_MAX_BUCKETS` | RFC-0004 §Compact summaries; §11.9 | 256 (a summary naming more is malformed) | P |
 | `SUMMARY_BUCKET_WIDTH` | RFC-0004 §Compact summaries; §11.9 | 86400 s (1 day; DRAFT default — granularity is calibratable) | C |
 | `ATTESTATION_CLOCK_SKEW` | RFC-0005 §Attestation freshness window; §11.12 | 300 s (an `issued_at` further in the future is rejected) | C |
@@ -610,6 +610,10 @@ changes within a major version are permitted.
 | `INFER_MAX_INPUT_BYTES` | §11.14 | 4096 (a larger request input is malformed) | P |
 | `INFER_MAX_POSITIONS` | §11.14 | 64 (an answer committing more positions is rejected) | P |
 | `INFER_MAX_RESP_BYTES` | §11.14 | 131072 (a larger INFER_RESP is malformed) | P |
+| `INFER_REF_UNCS_PER_POSITION` | §11.15 | 1000 μNCS per committed position (the v1 reference rate; replaced by RFC-0001's benchmarked table) | C |
+| `RECEIPT_WINDOW` | §11.15 | 600 s (how long a served answer stays receiptable) | C |
+| `RECEIPT_CLOCK_SKEW` | §11.15 | 300 s | C |
+| `RECEIPT_MAX_OFFER_BYTES` | §11.15 | 512 (a larger RECEIPT_OFFER is malformed) | P |
 
 Pinned values that change require a major version increment. Calibratable
 values change within the version via amendment to the corresponding RFC, with
@@ -720,6 +724,10 @@ not bundle unrelated changes.
 - **A signed answer that does not match its request** *(v0.13)* is an
   attributable false statement (§11.14), but it fits neither fault class of
   §11.5. Whether it earns one is open.
+- **Pricing a receipt** *(v0.14)*. RFC-0001 prices work by a benchmarked
+  NCS table that does not exist yet. Until it does, §11.15 uses one
+  calibratable reference rate per committed position, the same for every
+  tier. That is a floor a server enforces, not a market price.
 - **CBOR canonicalisation libraries vary in conformance.** Several CBOR
   libraries do not implement RFC 8949 §4.2.1 deterministic encoding
   correctly. The reference client will validate that its CBOR encoder
@@ -799,8 +807,8 @@ Stream discipline, by subsystem:
 - **Attestation (§11.12):** same discipline as the DHT — one request/response
   per bidirectional stream, sharing the DHT's envelope. A receiver demuxes a
   bidi stream by the envelope's `type` (§11.11).
-- **Inference (§11.14):** same discipline as the DHT — one request/response
-  per bidirectional stream, sharing the DHT's envelope.
+- **Inference and receipts (§11.14, §11.15):** same discipline as the DHT —
+  one request/response per bidirectional stream, sharing the DHT's envelope.
 - **Gossip (§11.3):** one persistent *unidirectional* stream per connection,
   opened by the sender and reused for every frame pushed to that peer.
   Because the stream is never FIN'd per message, each frame is
@@ -1119,8 +1127,9 @@ model.
 
 ### 11.9 · Receipts and selective disclosure
 
-**The receipt body** — the bytes both parties sign (RFC-0004 §"The receipt
-that matters for tenure"):
+**The receipt body** — the bytes both parties sign (RFC-0004 §"Computing A",
+§"Tenure: the (A, T, κ) spine"; *v0.14:* the section v0.6 cited by name
+never existed):
 
 ```
 receipt_body = {
@@ -1246,9 +1255,9 @@ All append-only; unknown values fail closed.
   ≥ 5 reserved.
 - **Gossip frame types** (§11.3, §11.13): 0 PUSH · 1 IHAVE · 2 IWANT ·
   3 BLOCK · 4 ATTEST · ≥ 5 reserved.
-- **Bidirectional-RPC envelope types** (§11.2, §11.12, §11.14): 1–8 DHT as tabled ·
+- **Bidirectional-RPC envelope types** (§11.2, §11.12, §11.14, §11.15): 1–8 DHT as tabled ·
   9 ATTEST_REQ · 10 ATTEST_RESP · 11 INFER_REQ · 12 INFER_RESP ·
-  ≥ 13 reserved. One registry for every
+  13 RECEIPT_OFFER · 14 RECEIPT_ACK · ≥ 15 reserved. One registry for every
   envelope carried on a bidi stream, so a receiver can demux by `type`
   before decoding the body.
 - **TEE vendors** (§11.12): 0 reserved (never valid on the wire) ·
@@ -1536,6 +1545,77 @@ vocab 256 and 64 bytes of input.
 its countersignature round-trip, arrive in a later version. So do the
 choice of `B_{r+1}` for a round in the v1 degraded chain and the dispatch
 of audits (§10).
+
+### 11.15 · Receipt exchange
+
+*Added in v0.14.* A served answer earns its producer a §11.9 receipt, and
+the receipt is what `A` and `T` are computed from (RFC-0004 §"Computing A",
+§"Tenure: the (A, T, κ) spine"). This section pins how the two parties
+produce one after an answered §11.14 exchange.
+
+**Exchange.** One request/response per bidirectional stream, in the §11.2
+envelope, opened by the **requester** (the receipt's `client`):
+
+| type | message | body |
+|---|---|---|
+| 13 | RECEIPT_OFFER | `offer` |
+| 14 | RECEIPT_ACK   | `{}` (refused) **or** `{0: server_sig (bytes 64)}` |
+
+```
+offer = {
+  0: body        (bytes)      ; the §11.9 receipt_body encoding
+  1: client_sig  (bytes 64)   ; Ed25519 over those bytes, by `client`
+}
+```
+
+Both maps are closed. The client offers; the producer countersigns. That
+way a receipt exists only for work the client accepted, at a value the
+client chose, and `INFER_RESP` stays as it is.
+
+**Binding a receipt to its answer.** The body's `nonce` is
+
+```
+nonce = BLAKE3(commit)[0:16]      ; commit = the §11.8 commit encoding the
+                                  ; INFER_RESP carried
+```
+
+So the receipt body needs no new field. Anyone holding the commit can check
+which answer a receipt pays for, and one answer has exactly one nonce.
+
+**Client.** It offers only for an *answered* §11.14 response. In the body:
+
+- `server` is the connection's TLS-authenticated peer-id;
+- `client` is its own;
+- `ncs_value` is at least `INFER_REF_UNCS_PER_POSITION × commit.length`;
+- `timestamp` is its clock.
+
+**Server.** It countersigns, and returns `server_sig` over the body bytes,
+iff all of:
+
+1. the offer decodes canonically, `body` decodes canonically as a §11.9
+   body, `server` is its own peer-id and `client` is the connection's
+   peer-id;
+2. `client_sig` verifies over `body` under `client`;
+3. `nonce` is the nonce of a commit it served **to this client** within
+   `RECEIPT_WINDOW`, and that commit has not been countersigned before.
+   **A server countersigns at most one receipt per nonce;**
+4. `ncs_value ≥ INFER_REF_UNCS_PER_POSITION × length` of that commit;
+5. `|timestamp − now| ≤ RECEIPT_CLOCK_SKEW`.
+
+Otherwise it answers `{}`. A refusal is never a fault, on either side.
+After the ACK, both parties hold the complete receipt (body, `server_sig`,
+`client_sig`). The server files it in its receipt bag (§11.9). A client
+whose ACK carries a `server_sig` that does not verify discards it.
+
+**Limits.** A RECEIPT_OFFER envelope above `RECEIPT_MAX_OFFER_BYTES` is
+malformed and rejected undecoded. The largest conformant one is about 230
+bytes.
+
+**What this does not settle.** A Sybil pair can still countersign receipts
+for work nobody needed, which is RFC-0004's "strategically inert" farmed
+tenure. The nonce binding makes each receipt name a real signed commit, but
+it does not make the work useful. Pricing is the v1 reference rate until
+RFC-0001's benchmarked table exists (§10).
 
 ---
 
