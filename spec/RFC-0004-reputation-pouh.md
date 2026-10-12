@@ -1,6 +1,6 @@
 # RFC-0004 — Reputation: Two Layers, One Architecture
 
-**Status:** Draft · v0.8
+**Status:** Draft · v0.9
 **Topic:** A reputation system in two layers — a consensus-free CRDT of self-authenticating fault proofs for individual slashing, and a small slow Proof-of-Unique-Hardware (PoUH) chain as ordered witness for pattern-based rules. The chain confirms what has happened. It does not create what happens. v0.3 added **A-as-bond for high-stakes acts**, v0.4 specified the **bond accounting model** and the fork-recovery bond formula. v0.5 closes four BLOCK items surfaced by the multi-persona external review: **G-Set pruning** with late-joiner protocol (N1), **partition recovery** with equivocation slashing and Σ-T fork choice (N2), **selective disclosure of receipts** as a first-class mechanism (N6, fixing previously-broken "RFC-0003-b" cross-references), and a **race-safe bond admission protocol** that does not require synchronised clocks. v0.7 makes committee fabrication **attributable**: the `invalid-transition` fault class as a signer-attributable, self-contained Layer-1 proof (§"Fabrication is attributable").
 **Audience:** You, if you have read enough blockchain whitepapers to be skeptical of one more — and willing to read another.
 **Depends on:** [RFC-0003](./RFC-0003-verification.md), [RFC-0005](./RFC-0005-identity.md)
@@ -367,14 +367,18 @@ time) at start.
 4. **Signing.** A committee member signs a proposal for its current attempt
    only if `prev` is its head, `cutoff_time` lies in
    [head cutoff + block time, its own clock + `CHAIN_CUTOFF_SKEW_S`], and its
-   **own** Layer-1 view at that cutoff — the proofs signed at or before it,
-   per the reference sketch below — composes the byte-identical block
-   (recompute-and-compare). **A member signs at most one block per height,
+   **own** Layer-1 view at that cutoff (item 9) composes the byte-identical
+   block (recompute-and-compare). **A member signs at most one block per height,
    ever:** two would be the attributable equivocation of §Equivocation
    slashing, and this rule is what lets an honest member never commit it.
 5. **Finality** at ⌈2k/3⌉ valid attestations; receivers verify each
    attestation's signature on arrival, before counting it, so a forged
-   attestation cannot poison the verdict.
+   attestation cannot poison the verdict. *(v0.9)* An attestation is
+   identified by `(block_hash, signer)` — the signature covers only the hash,
+   which commits the height — so it is counted once however it is labelled
+   (RFC-0008 §11.13). A node files a block only once a population
+   attestation for its hash is on file, and so emits its own attestation
+   before the block it attests.
 6. **Skip.** An attempt not final within the finality timeout (120 s) is
    skipped: the node moves to height h + 1 **on the same prev** — a new
    committee and proposer. Heights can therefore have gaps. This is the
@@ -388,6 +392,28 @@ time) at start.
    not on history; full chain sync (RFC-0010 step 8) supersedes this when it
    lands.
 8. **Epoch.** A block's epoch is (cutoff − genesis time) / `EPOCH_DURATION`.
+9. **The Layer-1 view at a cutoff** *(v0.9; v1 rule)*. The reference sketch
+   below filters proofs by `signed_at`, but a fault-proof envelope (RFC-0008
+   §11.5) carries an `epoch`, not a signing time. In v1 a proof in the node's
+   G-Set is **visible at `cutoff` iff its epoch has begun by then** —
+   `genesis_time + epoch · EPOCH_DURATION ≤ cutoff` — and its event time, for
+   the pattern windows, is that epoch's start. The confirmed-proofs root is
+   over the visible proofs' content-ids in ascending order (RFC-0008 §11.6).
+   Known limits, stated so that two implementations agree on the rule *and*
+   on what it does not do:
+   - inside an epoch the cutoff filters nothing, so a proof still propagating
+     when a block is decided makes members whose view already has it compose
+     a different block and abstain (2/3 absorbs a straggler; a burst can
+     cost an attempt);
+   - for an equivocation proof the envelope epoch is the *statement's* epoch
+     (§Layer 1), whose unit is the statement domain's, not the chain's — a
+     subject can choose it, so the visibility and event time of its own
+     fault are only as meaningful as that domain's epochs;
+   - the visible set is bounded only by G-Set pruning (§G-Set pruning); until
+     pruning is wired to L2 confirmation a peer that floods the G-Set can
+     grow every view past an implementation's bound and halt production.
+   A signed issuance time in the envelope would remove the first two; it is a
+   Layer-1 wire change, evaluated separately.
 
 Holders re-broadcast an open attempt's proposal and their own attestation
 every `CHAIN_GOSSIP_DEDUP_S` until the attempt ends (RFC-0008 §11.13).

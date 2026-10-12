@@ -6,6 +6,28 @@ amendments are. Each entry states what was, what is now, and why.
 
 ---
 
+## RFC-0008 v0.11 + RFC-0004 v0.9 — chain gossip hardening and the v1 Layer-1 view rule · 2026-10-12
+
+**Was:** RFC-0008 v0.10 §11.13 left four gaps, and an adversarial review of the reference implementation (ants-client PR6b) showed they were exploitable:
+- **ATTEST frames were deduplicated by their bytes alone.** Their `height` field is not covered by the signature, which signs only the block hash. A single genuine attestation could therefore be re-labelled with unbounded fresh heights. Each copy is a valid, distinct frame that floods the network and fills every node's attestation store. The reproducer showed finality halting permanently, with the head stuck at 0.
+- **BLOCK frames carry no proposer signature, and any decodable block was relayed.** A flood of bogus blocks could push the real proposal out of a node's proposal slots.
+- **Nothing said whether rejected frames enter the dedup window, or whether genesis-less nodes relay.**
+- **The Layer-1 view was undefined.** RFC-0004's sketch filters by `signed_at`, which the fault-proof envelope does not have.
+
+**Is now:**
+
+*RFC-0008 §11.13.*
+- An ATTEST is identified by `(block_hash, signer)`; `height` is an unsigned hint. A re-labelled copy is dropped and not forwarded, but not counted against the sender. An exact repeat is forwarded.
+- A BLOCK is accepted only once a population ATTEST for its hash is on file. Every node therefore sends its ATTEST before the BLOCK it attests, and per-connection ordering preserves that hop by hop.
+- Only accepted frames enter the dedup window.
+- Nodes without the genesis do not relay chain frames.
+
+*RFC-0004 §"Block production runtime".*
+- Item 5 states the same attestation identity and the attest-before-block filing rule.
+- New item 9 pins the v1 Layer-1 view: a proof is visible at the cutoff iff its epoch has begun, and its event time is that epoch's start. Three limits are stated explicitly: a cutoff does not filter within an epoch, an equivocation proof's epoch is the statement's, and the visible set is bounded only by pruning.
+
+**Why:** The first three points are security fixes, found and confirmed before the code was pushed. The reference reproducer's forged-height run now reaches the same head as the control run. The view rule is the founder's 2026-10-12 decision: pin the v1 rule now, so two implementations compose the same block, with its limits on the record. Pruning (PR7) closes the third limit. A signed issuance time in the fault-proof envelope would close the first two, and is evaluated separately as a Layer-1 wire change.
+
 ## RFC-0008 v0.10 + RFC-0004 v0.8 — L2 block production on the wire (§11.13) and the v1 block-production runtime · 2026-10-12
 
 **Was:** RFC-0004 §"Consensus mechanism" described one block (committee → proposal → attestations → 2/3 → gossip) and one sentence on timeouts ("skipped; the next committee proceeds"). It did not say:
