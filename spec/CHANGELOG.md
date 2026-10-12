@@ -6,6 +6,39 @@ amendments are. Each entry states what was, what is now, and why.
 
 ---
 
+## RFC-0008 v0.10 + RFC-0004 v0.8 — L2 block production on the wire (§11.13) and the v1 block-production runtime · 2026-10-12
+
+**Was:** RFC-0004 §"Consensus mechanism" described one block (committee → proposal → attestations → 2/3 → gossip) and one sentence on timeouts ("skipped; the next committee proceeds"). It did not say:
+- how a node strings blocks together;
+- whether a retry keeps the height, and with it what keeps an honest member from equivocating on a retry;
+- how a proposal's cutoff is chosen and checked;
+- what population Phase 1 draws from when no peer is attested yet;
+- how a late node catches up.
+
+RFC-0008 pinned the block bytes (§11.6) but not how proposals and attestations travel.
+
+**Is now:**
+
+*RFC-0004 §"Block production runtime (v1)"* — eight rules:
+- **Population:** the genesis trustees in Phase 1.
+- **Heights:** sequential on prev = head; committee k = min(N, 5) on the §4.2 / §4.3 seed. Every v1 block is degraded, because there is no drand fetcher.
+- **Proposal:** after the drand floor, with cutoff = the proposer's clock.
+- **Signing:** recompute-and-compare, within a cutoff window, and **at most one signature per height**.
+- **Finality:** at ⌈2k/3⌉, with each attestation verified on arrival.
+- **Skip:** a timed-out height is skipped to h + 1 **on the same prev**. Heights can have gaps, and no member ever re-signs a height.
+- **Adoption:** any provably-final block above the head is adopted, even across a gap.
+- **Epoch:** (cutoff − genesis) / `EPOCH_DURATION`.
+
+*RFC-0008 §11.13* — gossip frame types 3 BLOCK and 4 ATTEST on the §11.3 overlay:
+- invalid frames are dropped and counted against the sender;
+- deduplication by `BLAKE3(frame)` lasts `CHAIN_GOSSIP_DEDUP_S`, so re-broadcasts reach late joiners;
+- BLOCK frames get their own pinned cap of `CHAIN_MAX_BLOCK_FRAME_BYTES` (32 KiB), because a maximal block is ≈ 24.7 KB;
+- non-degraded BLOCKs are ignored in v1.
+
+§7 gains `CHAIN_GOSSIP_DEDUP_S`, `CHAIN_MAX_BLOCK_FRAME_BYTES`, `CHAIN_CUTOFF_SKEW_S` and `PHASE1_COMMITTEE_K`, and the §11.11 registry is extended to match.
+
+**Why:** These are the decisions D1–D6 the founder approved on 2026-10-12 for the node daemon's chain loop. The reference implementation already exists (ants-client `reputation/chain` `ants_chain_runtime`, PR6a), and it was tested on a simulated multi-node network with each load-bearing rule falsified. Skip-to-next-height is the substantive call: once a retry is a new height, "one signature per height" makes equivocation impossible for an honest member. The alternative, re-proposing at the same height, would have forced honest members to choose between liveness and equivocation.
+
 ## RFC-0008 v0.9 + RFC-0005 v0.3 — Attestation presentation (§11.12), signed `issued_at`, v1 verify-and-tag admission · 2026-10-12
 
 **Was:** RFC-0005 said a peer presents its attestation "on demand to other peers during handshake", but no document pinned the bytes. An implementer had no exchange, no envelope, no per-vendor blob layout and no rule tying the evidence to the connection. RFC-0005 §Attestation freshness window measured freshness from "the attestation's **signed** `issued_at` timestamp", yet no signed field carried it. The vendor-signed SNP report and TDX quote have no issuance timestamp, so `issued_at` existed only as unsigned presenter metadata. A stale attestation could be re-dated freely, and the 30-day window bounded nothing. Finally, the corpus did not say what a v1 peer should do at the handshake while attestation *generation* still waits on real confidential-compute hardware, and no peer can present evidence yet.
