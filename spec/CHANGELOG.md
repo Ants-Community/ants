@@ -6,6 +6,32 @@ amendments are. Each entry states what was, what is now, and why.
 
 ---
 
+## RFC-0004 v0.10 + RFC-0008 v0.12 — the Layer-1 view window and pruning · 2026-10-12
+
+**Was:** v0.9 item 9 made a proof visible at a cutoff once its epoch had begun, with no lower bound. §G-Set pruning said proofs become prunable after confirmation, but nothing tied pruning to the chain's view. A node that pruned and a node that did not (an archive) would therefore compose different blocks from the same chain state. Pruning also raised three questions the text left open: is a proof re-offered after it was pruned news again, does pruning un-slash, and which epoch drives it.
+
+**Is now:**
+
+*Item 9 — the view window.* The view at a cutoff in epoch e is the window `[e − 29, e]`, so `L1_VIEW_WINDOW_EPOCHS` = 30. This is the pattern rules' 30-day window. The third known limit is restated: the window bounds the view in time, not in volume.
+
+*New item 10 — pruning.*
+- After a final block, a node may prune proofs below `E − 30`. `E` is the epoch of the block's cutoff as the node computes it itself, capped at its own clock. Archive nodes never prune.
+- **History is not news.** A node keeps a monotone floor. A below-floor proof against a subject already held slashed is treated as a duplicate: not stored, not forwarded, not counted against the sender.
+- **A new slash below the floor is news.** If the proof names a subject not yet slashed, the subject becomes slashed and the proof is forwarded, though still not stored.
+- **Pruning never un-slashes.** A pruned subject stays slashed for local queries.
+- Nodes SHOULD advertise only proofs inside the window.
+
+*Late-joiner note.* A v1 node that composes or checks blocks syncs the 30-epoch window.
+
+*RFC-0008 §7.* Adds `L1_VIEW_WINDOW_EPOCHS` = 30 (P).
+
+**Why:**
+- **Founder decisions, 2026-10-12.** A 30-epoch window, so the pattern rules still see 30 days. Bonds are deferred until after serving.
+- **Adversarial review of the reference implementation.** It found three of the rules above:
+  - The first cut of the floor silently dropped late slashes. The subject chooses the epoch of an equivocation, so a proof can be new and still fall below the floor.
+  - Lazy-pull re-requested pruned proofs forever.
+  - A block's claimed epoch could have driven the floor past live proofs.
+
 ## RFC-0008 v0.11 + RFC-0004 v0.9 — chain gossip hardening and the v1 Layer-1 view rule · 2026-10-12
 
 **Was:** RFC-0008 v0.10 §11.13 left four gaps, and an adversarial review of the reference implementation (ants-client PR6b) showed they were exploitable:
