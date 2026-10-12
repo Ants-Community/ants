@@ -1,6 +1,6 @@
 # RFC-0008 — Wire Formats, Crypto Primitives, and Reference Constants
 
-**Status:** Reference · v0.10 (living standard)
+**Status:** Reference · v0.11 (living standard)
 **Topic:** The concrete byte-level choices the protocol makes once and refers to from everywhere else.
 **Audience:** You, if you are about to write code.
 **Depends on:** all design RFCs (this document is the implementation glue between them).
@@ -1382,15 +1382,40 @@ PUSH is.
 `CHAIN_GOSSIP_DEDUP_S`: holders re-broadcast an open attempt's proposal and
 their own attestation at that interval (RFC-0004), and the window lets those
 repeats re-flood, so a node that connects mid-attempt still receives them.
-Frames are not re-validated against chain state for deduplication — a frame
-at or below the receiver's head is simply ignored by its runtime.
+Only frames the receiver accepted enter the dedup window; a dropped frame is
+re-checked if it arrives again.
+
+*Added in v0.11 (hardening; found by adversarial review of the reference
+implementation).*
+
+- **An ATTEST is identified by `(block_hash, signer)`.** The signature covers
+  only `block_hash`, and the block hash already commits the height (§11.6),
+  so `height` is an *unsigned hint*. A receiver keeps at most one ATTEST per
+  `(block_hash, signer)` and counts finality by that pair alone. A copy whose
+  `height` differs from the one on file is the same attestation re-labelled:
+  dropped and **not forwarded** — but not counted against the sender, who
+  may be an honest relayer of the first copy it saw. An exact repeat (a
+  holder's re-broadcast) is forwarded as usual. Without this rule anyone
+  could re-label one genuine attestation with unbounded fresh heights —
+  each a new, valid, distinct frame — flood every node's attestation store
+  and stall finality network-wide.
+- **A BLOCK is accepted only once a population ATTEST for its hash is on
+  file.** A block carries no proposer signature, so an unattested one could
+  be anyone's; it is dropped (not counted, not forwarded) and arrives again
+  with the next re-broadcast. Every node therefore sends its ATTEST **before**
+  the BLOCK it attests — on the per-connection stream (§11.3) the order is
+  preserved hop by hop, so the proposer's ATTEST precedes its BLOCK
+  everywhere.
+- **A node without the genesis does not relay chain frames:** it cannot
+  check signers against the population, and relaying unvalidated frames
+  would turn it into an amplifier.
 
 **Size.** `GOSSIP_MAX_FRAME_BYTES` applies to frame types 0–2. A BLOCK frame
 may be up to `CHAIN_MAX_BLOCK_FRAME_BYTES`, which covers a block at the
 `MAX_PATTERN_FINDINGS` ceiling (≈ 24.7 KB encoded) within the u16 length
 prefix; an ATTEST frame is ≈ 150 bytes.
 
-**v1 restriction.** A BLOCK whose `degraded_seed` is false is ignored — not
+**v1 restriction.** A BLOCK whose `degraded_seed` is false is ignored, not
 counted against the sender: a v1 node holds no beacon with which to
 recompute its committee (RFC-0004 §"Block production runtime", item 2). The
 restriction lifts with a drand fetcher.
